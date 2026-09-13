@@ -68,7 +68,7 @@ jobs:
           echo "${GITHUB_SHA}" > BUILD_SHA
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add BUILD_SHA
+          git add -f BUILD_SHA   # -f: it is .gitignored for local dev, but we deploy it
           git commit -m "deploy: stamp ${GITHUB_SHA}" --no-verify
           # The token authenticates the push; the username field is ignored by HF.
           git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}.git" HEAD:main
