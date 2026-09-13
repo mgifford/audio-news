@@ -23,6 +23,24 @@ def test_feedfetch_parse_is_extractive_and_drops_linkless():
     assert "<" not in items[0]["description"] and "200 homes" in items[0]["description"]
 
 
+def test_feedfetch_strips_boilerplate_and_bylines():
+    assert feedfetch.clean("Real news. The post Foo appeared first on ProPublica.") == "Real news."
+    assert feedfetch.clean("A headline sofia Wed, 07/01/2026 - 15:50") == "A headline"
+
+
+def test_feedfetch_tidy_ends_on_a_sentence_no_ellipsis():
+    text = "One complete sentence here. " + "and more words " * 60
+    out = feedfetch.tidy(text)
+    assert "…" not in out
+    assert out.endswith((".", "!", "?"))
+    assert out.startswith("One complete sentence here.")
+
+
+def test_feedfetch_prefers_full_content_over_summary():
+    entry = {"content": [{"value": "<p>" + "Full body. " * 20 + "</p>"}], "summary": "short"}
+    assert "Full body" in feedfetch._best_text(entry)
+
+
 def test_feedfetch_build_cache_offline():
     sources = {"geography": {"local": [{"id": "x", "name": "X", "url": "https://x", "type": "civic"}]}}
     cache = feedfetch.build_cache(sources, fetcher=lambda url: (200, _RSS))

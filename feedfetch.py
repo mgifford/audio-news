@@ -10,7 +10,7 @@ import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
 MAX_ITEMS = 12
-MAX_DESC = 320
+MAX_DESC = 480       # more room so a summary is substantial, not a one-liner
 TIMEOUT = 12          # per-feed cap; concurrency keeps total wall time near one feed
 MAX_WORKERS = 8       # feeds are fetched in parallel, not one after another
 USER_AGENT = "audio-news/1.0 (+https://github.com/mgifford/audio-news)"
@@ -18,15 +18,52 @@ USER_AGENT = "audio-news/1.0 (+https://github.com/mgifford/audio-news)"
 _TAG_RE = re.compile(r"<[^>]*>")
 _WS_RE = re.compile(r"\s+")
 
+# Common RSS boilerplate that shouldn't be read aloud.
+_BOILERPLATE = [
+    re.compile(r"\s*The post\b.*?\bappeared first on\b.*$", re.I | re.S),
+    re.compile(r"\s*\[(?:…|\.\.\.|read more)\]\s*$", re.I),
+    re.compile(r"\s*(?:Continue reading|Read more|Read full story)\b.*$", re.I),
+    # trailing byline + timestamp, e.g. "sofia Wed, 07/01/2026 - 15:50"
+    re.compile(r"\s+\S+\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+\d{1,2}/\d{1,2}/\d{4}\s*-\s*\d{1,2}:\d{2}\s*$", re.I),
+]
+
 
 def clean(text: str) -> str:
-    """Strip tags, collapse whitespace, cap length so a summary is speech-ready."""
-    text = _WS_RE.sub(" ", _TAG_RE.sub(" ", text or "")).strip()
-    if len(text) <= MAX_DESC:
-        return text
-    slice_ = text[:MAX_DESC]
-    cut = slice_.rfind(" ")
-    return (slice_[:cut] if cut > 40 else slice_).strip() + "…"
+    """Strip tags and known boilerplate, collapse whitespace. No truncation here."""
+    text = _TAG_RE.sub(" ", text or "")
+    text = _WS_RE.sub(" ", text).strip()
+    for pat in _BOILERPLATE:
+        text = pat.sub("", text).strip()
+    return text
+
+
+def tidy(text: str, max_len: int = MAX_DESC) -> str:
+    """Trim to a whole-sentence boundary so a summary never ends mid-thought (no '…')."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text if text[-1:] in ".!?" else text + "."
+    window = text[:max_len]
+    ends = [m.end() for m in re.finditer(r"[.!?](?:\s|$)", window)]
+    if ends and ends[-1] >= 80:            # end on the last complete sentence
+        return text[:ends[-1]].strip()
+    cut = window.rfind(" ")                # fallback: last word, closed with a period
+    return (window[:cut] if cut > 80 else window).strip().rstrip(".,;:") + "."
+
+
+def _best_text(entry) -> str:
+    """Prefer the fullest text a feed offers (content:encoded) over a one-line summary."""
+    candidates = []
+    for c in entry.get("content", []) or []:
+        val = c.get("value") if isinstance(c, dict) else None
+        if val:
+            candidates.append(val)
+    for key in ("summary", "description"):
+        if entry.get(key):
+            candidates.append(entry[key])
+    # Pick the candidate with the most visible text.
+    return max(candidates, key=lambda v: len(_TAG_RE.sub(" ", v)), default="")
 
 
 def parse_feed(raw) -> list[dict]:
@@ -40,7 +77,7 @@ def parse_feed(raw) -> list[dict]:
             continue  # link lineage: drop items with no verifiable source URL
         items.append({
             "title": (entry.get("title") or "Untitled").strip(),
-            "description": clean(entry.get("summary") or entry.get("description") or ""),
+            "description": tidy(clean(_best_text(entry))),
             "link": link,
         })
     return items

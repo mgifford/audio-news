@@ -14,8 +14,8 @@
 // In other browsers that protocol does nothing, so the affordance is Edge-only.
 const IS_EDGE = /\bEdg\//.test(navigator.userAgent);
 
-// The visible summary and the spoken summary use the same capped string, so audio matches transcript.
-const MAX_DESC = 320;
+// The visible summary and the spoken summary use the same string, so audio matches transcript.
+const MAX_DESC = 480;
 
 // History cap: number of recently-read story links remembered locally.
 const MAX_HISTORY = 50;
@@ -447,10 +447,10 @@ async function fetchRSSFeed(source) {
     return items.map(item => {
       const title = (item.querySelector('title')?.textContent || 'Untitled').trim();
       const link = extractLink(item);
-      const rawDesc = item.querySelector('description, summary, content')?.textContent || '';
-      // Strip tags and collapse whitespace so the summary is speech-ready, then cap it.
-      const cleanDesc = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-      return { title, link, description: capText(cleanDesc, MAX_DESC) };
+      // Prefer the fullest text a feed offers (content:encoded) over a one-line summary.
+      const raw = item.querySelector('encoded')?.textContent
+        || item.querySelector('description, summary, content')?.textContent || '';
+      return { title, link, description: tidyText(cleanText(raw)) };
     }).filter(item => item.link); // drop items with no verifiable source link
   } catch (err) {
     console.warn(`Failed to fetch feed: ${source.name}`, err);
@@ -458,11 +458,30 @@ async function fetchRSSFeed(source) {
   }
 }
 
-function capText(text, max) {
-  if (text.length <= max) return text;
-  const slice = text.slice(0, max);
-  const lastSpace = slice.lastIndexOf(' ');
-  return `${(lastSpace > 40 ? slice.slice(0, lastSpace) : slice).trim()}…`;
+// Mirror of feedfetch.clean/tidy so the live-proxy fallback matches the server path.
+const _BOILERPLATE = [
+  /\s*The post\b[\s\S]*?\bappeared first on\b[\s\S]*$/i,
+  /\s*\[(?:…|\.\.\.|read more)\]\s*$/i,
+  /\s*(?:Continue reading|Read more|Read full story)\b[\s\S]*$/i,
+  /\s+\S+\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}:\d{2}\s*$/i
+];
+
+function cleanText(text) {
+  let t = (text || '').replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+  _BOILERPLATE.forEach(re => { t = t.replace(re, '').trim(); });
+  return t;
+}
+
+// Trim to a whole-sentence boundary so a summary never ends mid-thought (no ellipsis).
+function tidyText(text, max = MAX_DESC) {
+  text = (text || '').trim();
+  if (!text) return '';
+  if (text.length <= max) return /[.!?]$/.test(text) ? text : `${text}.`;
+  const window = text.slice(0, max);
+  const m = window.match(/[\s\S]*[.!?](?=\s|$)/);
+  if (m && m[0].length >= 80) return m[0].trim();
+  const cut = window.lastIndexOf(' ');
+  return `${(cut > 80 ? window.slice(0, cut) : window).trim().replace(/[.,;:]$/, '')}.`;
 }
 
 function renderQueue(deck) {
@@ -501,18 +520,49 @@ function renderQueue(deck) {
   });
 }
 
-// Phase 1 local reader: reads exactly what is shown on the cards (transcript parity).
+// Broadcast-shaped framing for the local reader (English; the localized/SJN version
+// is the backend "Generate broadcast"). Mirrors the server's transitions.
+const LOCAL_SCOPE = {
+  local: 'In local news', regional: 'Turning to regional news',
+  national: 'Across the country', international: 'Internationally'
+};
+const LOCAL_BEAT = {
+  health: 'In health news', technology: 'In technology',
+  business: 'In business and the economy', government: 'In government and policy',
+  environment: 'On the environment', justice: 'In justice and rights'
+};
+
+function sentenceCase(text) {
+  text = (text || '').trim();
+  if (!text) return '';
+  text = text[0].toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+// Phase 1 local reader: reads what is shown on the cards (transcript parity), now in
+// the broadcast shape — headline lead, transitions, full sentences, sign-off.
 function readDeckAloud() {
-  if (APP_STATE.currentDeck.length === 0) return;
+  const deck = APP_STATE.currentDeck;
+  if (deck.length === 0) return;
 
-  let broadcastScript = 'This is your local and global news bulletin. ';
-  APP_STATE.currentDeck.forEach(item => {
-    broadcastScript += `Turning to ${item.scope} news from ${item.sourceName}. ${item.title}. ${item.description} `;
+  const headlines = deck.map(d => d.title.replace(/\.$/, '')).join('; ');
+  const parts = ['This is your news bulletin.', `Our top stories: ${headlines}.`, 'Now, the details.'];
+
+  let lastKey = null;
+  deck.forEach(item => {
+    const key = item.beat || item.scope;
+    const label = (item.beat && LOCAL_BEAT[item.beat]) || LOCAL_SCOPE[item.scope] || 'Next';
+    parts.push(key !== lastKey
+      ? `${label}, from ${item.sourceName}: ${sentenceCase(item.title)}`
+      : `Also from ${item.sourceName}: ${sentenceCase(item.title)}`);
+    lastKey = key;
+    if (item.description) parts.push(sentenceCase(item.description));
   });
+  parts.push('That is your briefing.');
 
-  recordHistory(APP_STATE.currentDeck);
+  recordHistory(deck);
   clearScript(); // the cards themselves are the transcript in local mode
-  speak(broadcastScript, 'Reading the deck aloud…');
+  speak(parts.join(' '), 'Reading the deck aloud…');
 }
 
 // Phase 2 broadcast: send the deck to the backend, then read the returned script.
