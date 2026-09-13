@@ -187,6 +187,39 @@ def test_word_cap_keeps_bulletin_near_target():
     assert len(script.split()) < 420
 
 
+def test_cluster_by_topic_groups_same_event():
+    stories = [
+        {"source": "A", "title": "Delta flooding displaces thousands"},
+        {"source": "B", "title": "Thousands flee as delta flooding worsens"},
+        {"source": "C", "title": "Rainforest corridor restored for wildlife"},
+    ]
+    clusters = m.cluster_by_topic(stories)
+    sizes = sorted(len(c) for c in clusters)
+    assert sizes == [1, 2]  # A+B cluster, C alone
+
+
+def test_international_roundup_is_multi_source_and_attributed():
+    stories = [
+        {"scope": "international", "source": "The New Humanitarian",
+         "title": "Delta flooding displaces thousands", "summary": "Families forced from homes."},
+        {"scope": "international", "source": "BBC World Service",
+         "title": "Thousands flee as delta flooding worsens", "summary": "Water levels keep rising."},
+    ]
+    script = m.assemble_script(stories)
+    assert "several outlets are following" in script
+    assert "The New Humanitarian reports: Families forced from homes." in script
+    assert "BBC World Service reports: Water levels keep rising." in script
+
+
+def test_no_roundup_for_single_source():
+    # Two stories from the SAME outlet must not be presented as a multi-source roundup.
+    stories = [
+        {"scope": "international", "source": "BBC", "title": "Delta flooding displaces thousands", "summary": "x"},
+        {"scope": "international", "source": "BBC", "title": "Thousands flee delta flooding", "summary": "y"},
+    ]
+    assert "several outlets" not in m.assemble_script(stories)
+
+
 def test_mcp_manifest_lists_tools():
     names = [t["name"] for t in client.get("/mcp/tools").json()["tools"]]
     assert names == ["evaluate_sojo_story", "generate_radio_bulletin"]

@@ -26,7 +26,7 @@ const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 const APP_STATE = {
   theme: localStorage.getItem('sojo_theme') || 'dark',
-  ratios: readJSON('sojo_ratios', { local: 1, regional: 1, national: 2, international: 1 }),
+  ratios: readJSON('sojo_ratios', { local: 1, regional: 1, national: 2, international: 3 }),
   beats: readJSON('sojo_beats', []),
   region: localStorage.getItem('sojo_region') || 'ottawa',
   lang: localStorage.getItem('sojo_lang') || '',   // '' = follow the region's language
@@ -335,13 +335,10 @@ async function generateNewsDeck() {
     const targetCount = APP_STATE.ratios[geo];
     if (targetCount <= 0) continue;
 
-    const { source, items } = await pickScopeStories(geo);
-    if (!source) continue;
-
-    // Skip stories already in local history.
-    const freshItems = items.filter(item => !APP_STATE.history.includes(item.link));
-
-    freshItems.slice(0, targetCount).forEach(item => {
+    // Gather from MULTIPLE sources (one story each) so international can be synthesized
+    // across outlets. Falls back to more items from fewer sources when needed.
+    const picks = await collectScopeStories(geo, targetCount);
+    picks.forEach(({ source, item }) => {
       deck.push({
         scope: geo,
         beat: source.beat || null,
@@ -411,6 +408,39 @@ async function _pickFrom(list) {
 async function pickScopeStories(geo) {
   const g = currentGeography();
   return _pickFrom(g && g[geo]);
+}
+
+// Collect up to `count` stories for a scope, preferring DIFFERENT sources (one each)
+// so international coverage can be synthesized across outlets. Returns [{source, item}].
+async function collectScopeStories(geo, count) {
+  const g = currentGeography();
+  const list = (g && g[geo]) || [];
+  if (!list.length) return [];
+  const shuffled = list.slice().sort(() => Math.random() - 0.5);
+  const out = [];
+  const used = new Set(APP_STATE.history);
+
+  const takeOne = async (source) => {
+    const items = (source.items && source.items.length) ? source.items : await fetchRSSFeed(source);
+    return items.find(it => it.link && !used.has(it.link));
+  };
+
+  // First pass: one fresh story from each distinct source.
+  for (const source of shuffled) {
+    if (out.length >= count) break;
+    const item = await takeOne(source);
+    if (item) { out.push({ source, item }); used.add(item.link); }
+  }
+  // Second pass: if short (few sources), take more items from the sources we have.
+  for (const source of shuffled) {
+    if (out.length >= count) break;
+    const items = source.items || [];
+    for (const item of items) {
+      if (out.length >= count) break;
+      if (item.link && !used.has(item.link)) { out.push({ source, item }); used.add(item.link); }
+    }
+  }
+  return out;
 }
 
 // Pick a source for a topic beat (shared across regions).

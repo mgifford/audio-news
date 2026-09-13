@@ -184,7 +184,10 @@ Structure:
    arc using the story's fields: the response, then the evidence, then the limitation.
    For a crisis, lead with dignity and the root_cause, then the action_anchor.
 3. Use natural spoken transitions between tiers ("Across the country...", "Internationally...").
-4. Spell large numbers as words. No markdown, no URLs.
+4. When several international stories cover the SAME event, combine them into ONE segment,
+   attributing each outlet (e.g. "The New Humanitarian reports...; the BBC adds..."). Do not
+   merge stories that are about different events.
+5. Spell large numbers as words. No markdown, no URLs.
 
 Absolute rule: use ONLY facts in the JSON (title, summary, response, evidence, limitation,
 root_cause, action_anchor). Do NOT add any fact, number, name, cause, or claim not present.
@@ -289,6 +292,8 @@ FRAMING = {
         "help": "If you would like to help: ",
         "resource": "A resource link is in your player deck.",
         "and_finally": "And finally, some better news, from {source}: ",
+        "roundup_lead": "In international news, a story several outlets are following.",
+        "roundup_src": "{source} reports: ",
         "outro": "That is your briefing.",
         "scope": {"local": "In local news", "regional": "Turning to regional news",
                   "national": "Across the country", "international": "Internationally"},
@@ -308,6 +313,8 @@ FRAMING = {
         "help": "Pour aider : ",
         "resource": "Un lien vers des ressources se trouve dans votre lecteur.",
         "and_finally": "Et pour finir, une meilleure nouvelle, de {source} : ",
+        "roundup_lead": "À l'international, un sujet suivi par plusieurs médias.",
+        "roundup_src": "{source} rapporte : ",
         "outro": "Voilà votre bulletin.",
         "scope": {"local": "Dans l'actualité locale", "regional": "Au niveau régional",
                   "national": "À l'échelle nationale", "international": "À l'international"},
@@ -342,6 +349,36 @@ def _transition(story: dict, F: dict) -> str:
     if beat and beat in F["beat"]:
         return F["beat"][beat]
     return F["scope"].get(story.get("scope"), F["scope"]["national"])
+
+
+_STOPWORDS = {
+    "the", "and", "for", "with", "from", "that", "this", "have", "has", "are", "was",
+    "were", "will", "into", "over", "after", "amid", "says", "said", "new", "how",
+    "why", "what", "who", "its", "their", "his", "her", "они", "les", "des", "une",
+    "pour", "dans", "sur", "avec", "que", "qui", "est", "aux",
+}
+
+
+def _topic_tokens(title: str) -> set:
+    """Significant words in a headline, for lightweight topic clustering."""
+    return {t for t in re.findall(r"[a-zà-ÿ0-9]+", (title or "").lower())
+            if len(t) > 3 and t not in _STOPWORDS}
+
+
+def cluster_by_topic(stories: list[dict], min_shared: int = 2) -> list[list[dict]]:
+    """Greedily group stories that share enough headline keywords. Deterministic; used
+    to build a multi-source roundup from several outlets covering one story."""
+    clusters: list[dict] = []
+    for s in stories:
+        toks = _topic_tokens(s.get("title", ""))
+        for c in clusters:
+            if len(toks & c["tokens"]) >= min_shared:
+                c["stories"].append(s)
+                c["tokens"] |= toks
+                break
+        else:
+            clusters.append({"tokens": toks, "stories": [s]})
+    return [c["stories"] for c in clusters]
 
 
 def _story_body(s: dict, F: dict) -> list[str]:
@@ -391,17 +428,38 @@ def assemble_script(stories: list[dict], anchor_name: str = "Alex", lang: str = 
         F["details"],
     ]
 
+    # Multi-source roundup: cluster the international stories by topic, so several
+    # outlets covering one story are synthesized into a single attributed segment.
+    intl = [s for s in body_stories if s.get("scope") == "international"]
+    roundups = {}  # id(first story) -> [stories], for clusters drawn from >= 2 sources
+    consumed = set()
+    for group in cluster_by_topic(intl):
+        if len(group) >= 2 and len({g["source"] for g in group}) >= 2:
+            roundups[id(group[0])] = group
+            for g in group[1:]:
+                consumed.add(id(g))
+
     words = sum(len(p.split()) for p in parts)
     reserve = 45 if closer else 0  # leave room for the closer under the word target
     last_key = None
     for s in body_stories:
-        key = s.get("beat") or s.get("scope")
-        if key != last_key:
-            lead = F["lead"].format(transition=_transition(s, F), source=s["source"]) + _sent(s["title"])
+        if id(s) in consumed:
+            continue  # already spoken inside a roundup
+        group = roundups.get(id(s))
+        if group:
+            # Attributed roundup drawing on multiple outlets (still extractive).
+            chunk = [F["roundup_lead"]]
+            for g in group:
+                chunk.append(F["roundup_src"].format(source=g["source"]) + _sent(g.get("summary") or g["title"]))
+            last_key = "international"
         else:
-            lead = F["also"].format(source=s["source"]) + _sent(s["title"])
-        last_key = key
-        chunk = [lead, *_story_body(s, F)]
+            key = s.get("beat") or s.get("scope")
+            if key != last_key:
+                lead = F["lead"].format(transition=_transition(s, F), source=s["source"]) + _sent(s["title"])
+            else:
+                lead = F["also"].format(source=s["source"]) + _sent(s["title"])
+            last_key = key
+            chunk = [lead, *_story_body(s, F)]
         chunk_words = sum(len(p.split()) for p in chunk)
         if words + chunk_words > TARGET_WORDS - reserve and words > 40:
             break  # over the soft target; remaining stories stay in the headline block

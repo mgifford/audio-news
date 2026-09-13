@@ -74,6 +74,14 @@ that beat (deterministic — no model classifies beats).
   It is grounding-checked and shown as "AI-rephrased"; the "no invented facts"
   guarantee does **not** hold in this mode, which is why it is off by default.
 
+**Multi-source international roundup.** International stories are clustered by shared
+headline keywords (`cluster_by_topic`, deterministic). When two or more outlets cover
+the same event, the deterministic bulletin renders one **attributed roundup** ("The
+New Humanitarian reports…; the BBC adds…") drawn from all of them — still extractive,
+never conflated. The generative mode is instructed to synthesize such clusters. The
+deck gathers international stories from several sources (default mix bumped) so there
+is cross-outlet material to synthesize.
+
 A **cognitive-load cap** keeps crisis/heavy stories to at most one in three in any
 bulletin (both modes).
 
