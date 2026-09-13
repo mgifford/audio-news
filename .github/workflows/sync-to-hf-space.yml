@@ -90,15 +90,18 @@ jobs:
           echo "::error::Space did not report this build healthy in time. Check the Space build logs." >&2
           exit 1
 
-      - name: Feed smoke (informational; does not fail the deploy)
+      - name: Feed smoke per region (informational; does not fail the deploy)
         continue-on-error: true
         env:
-          FEEDS_URL: https://mgifford-audio-news.hf.space/api/feeds
+          BASE: https://mgifford-audio-news.hf.space
         run: |
-          # Feeds can be individually flaky, so this reports counts rather than gating.
-          body=$(curl -s --max-time 60 "${FEEDS_URL}" || true)
-          total=$(echo "${body}" | grep -o "\"itemCount\":[0-9]*" | grep -o "[0-9]*" | paste -sd+ - | bc 2>/dev/null || echo "?")
-          echo "Server-side /api/feeds total items: ${total}"
-          if [ "${total}" = "0" ]; then
-            echo "::warning::/api/feeds returned 0 items — every feed may be unreachable server-side. Investigate."
-          fi
+          # Report per-region item counts AND which individual feeds returned 0, so we
+          # can see whether each city's local news (and the beat feeds) actually resolve.
+          for region in ottawa toronto vancouver eugene london paris; do
+            body=$(curl -s --max-time 90 "${BASE}/api/feeds?region=${region}" || true)
+            total=$(echo "${body}" | grep -o "\"itemCount\":[0-9]*" | grep -o "[0-9]*" | paste -sd+ - | bc 2>/dev/null || echo "?")
+            echo "region ${region}: ${total} items"
+            # Names of feeds that returned zero items (dead/blocked URLs to swap).
+            zeros=$(echo "${body}" | tr '}' '\n' | grep '"itemCount":0' | grep -o '"name":"[^"]*"' | sed 's/"name":"//;s/"//' | paste -sd', ' -)
+            [ -n "${zeros}" ] && echo "  0-item feeds: ${zeros}"
+          done
