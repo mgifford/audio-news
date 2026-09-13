@@ -31,19 +31,38 @@ app = FastAPI(title="Solutions News Radio Engine", version="2.0.0")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.getenv("MODEL_PATH", "/app/models/model.gguf")
+
+
+def _read_build_sha() -> str:
+    """The deployed commit SHA, written into BUILD_SHA at deploy time (see the sync
+    workflow). Lets /api/health prove which build is live, not just that it responds."""
+    try:
+        with open(os.path.join(BASE_DIR, "BUILD_SHA"), encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return os.getenv("BUILD_SHA", "unknown")
+
+
+BUILD_SHA = _read_build_sha()
 N_CTX = int(os.getenv("N_CTX", "4096"))
 N_THREADS = int(os.getenv("N_THREADS", str(os.cpu_count() or 2)))
 
-# Same-origin serving means CORS is not needed on the Space itself. It stays
-# configurable for a GitHub Pages frontend calling this backend cross-origin.
-# allow_credentials is False so a wildcard origin stays valid (browsers reject
-# "*" together with credentials); this API uses no cookies or auth.
-_origins_env = os.getenv("ALLOWED_ORIGINS", "*").strip()
-ALLOWED_ORIGINS = ["*"] if _origins_env == "*" else [o.strip() for o in _origins_env.split(",") if o.strip()]
+# The Space serves the frontend same-origin, so CORS matters only for a separate
+# GitHub Pages frontend calling this backend. Default to the project's Pages origin
+# plus any *.hf.space subdomain (wildcard subdomains need a regex — allow_origins
+# can't express them). Override the exact list with ALLOWED_ORIGINS.
+# allow_credentials is False (this API has no cookies/auth), so no wildcard is used.
+_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = (
+    [o.strip() for o in _origins_env.split(",") if o.strip()]
+    if _origins_env
+    else ["https://mgifford.github.io", "http://localhost:8000", "http://127.0.0.1:8000"]
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://[a-z0-9-]+\.hf\.space",
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -79,6 +98,10 @@ class RawArticle(BaseModel):
 class BulletinRequest(BaseModel):
     articles: List[RawArticle]
     anchor_name: Optional[str] = "Alex"
+    # "deterministic" (default): the bulletin is assembled from the feed's own words,
+    # so spoken text == extracted text (no added hallucination surface). "generative":
+    # a local model rephrases into broadcast prose (clearly labelled, grounding-checked).
+    mode: Optional[str] = "deterministic"
 
 
 class SoJoEvaluation(BaseModel):
@@ -191,6 +214,49 @@ def ground_numbers(script: str, articles: List[RawArticle]) -> List[str]:
     return [f"Script contains number '{n}' not found in the source articles." for n in introduced]
 
 
+# --- Bulletin assembly (deterministic) --------------------------------------
+
+# Cognitive-load rule: at most one crisis/heavy story per three, so a bulletin does
+# not overwhelm the listener (a solutions-journalism principle, not just a UI nicety).
+def apply_load_cap(stories: list[dict]) -> tuple[list[dict], list[dict]]:
+    allowed_crisis = max(1, len(stories) // 3)
+    kept, omitted, crisis_seen = [], [], 0
+    for s in stories:
+        if s.get("is_crisis"):
+            crisis_seen += 1
+            if crisis_seen > allowed_crisis:
+                omitted.append(s)
+                continue
+        kept.append(s)
+    return kept, omitted
+
+
+_SCOPE_TRANSITIONS = {
+    "local": "In local news",
+    "regional": "Turning to regional news",
+    "national": "Across the country",
+    "international": "In international developments",
+}
+
+
+def assemble_script(stories: list[dict], anchor_name: str = "Alex") -> str:
+    """Build the spoken bulletin from the feeds' own words — no model, so the spoken
+    text equals the extracted text (nothing invented). URLs are never spoken."""
+    parts = [f"This is your news bulletin, with {anchor_name}."]
+    last_scope = None
+    for s in stories:
+        if s["scope"] != last_scope:
+            parts.append(f"{_SCOPE_TRANSITIONS.get(s['scope'], 'Next')}.")
+            last_scope = s["scope"]
+        parts.append(f"From {s['source']}: {s['title']}.")
+        if s.get("summary"):
+            parts.append(s["summary"] if s["summary"].endswith(".") else s["summary"] + ".")
+        if s.get("is_crisis") and s.get("action_anchor"):
+            parts.append(f"{s['action_anchor']} A resource link is in your player deck.")
+    parts.append("That is your briefing.")
+    return " ".join(p.strip() for p in parts if p.strip())
+
+
 # --- Core processing ---------------------------------------------------------
 
 def evaluate_article(article: RawArticle) -> SoJoEvaluation:
@@ -216,7 +282,12 @@ def evaluate_article(article: RawArticle) -> SoJoEvaluation:
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "online", "engine": "Solutions News Radio Engine v2.0", "model_loaded": _llm is not None}
+    return {
+        "status": "online",
+        "engine": "Solutions News Radio Engine v2.0",
+        "model_loaded": _llm is not None,
+        "build": BUILD_SHA,
+    }
 
 
 @app.post("/api/generate-bulletin")
@@ -239,18 +310,30 @@ def generate_bulletin(req: BulletinRequest):
                 "action_anchor": ev.action_anchor,
             })
 
-        articles_json = json.dumps(processed_stories, indent=2)
-        prompt = RADIO_SCRIPT_PROMPT.format(articles_json=articles_json)
-        # Deterministic per ADR 0001 (overrides the reference's temperature=0.2).
-        script_response = get_llm()(prompt, max_tokens=800, temperature=0.0, top_p=1.0, stop=["<|im_end|>"])
-        script_text = script_response["choices"][0]["text"].strip()
+        # Cognitive-load cap applies to both modes.
+        kept, omitted = apply_load_cap(processed_stories)
+
+        if req.mode == "generative":
+            # Optional local-model rephrase. Clearly labelled and grounding-checked;
+            # spoken text is no longer guaranteed to equal the source, hence the check.
+            articles_json = json.dumps(kept, indent=2)
+            prompt = RADIO_SCRIPT_PROMPT.format(articles_json=articles_json)
+            resp = get_llm()(prompt, max_tokens=800, temperature=0.0, top_p=1.0, stop=["<|im_end|>"])
+            script_text = resp["choices"][0]["text"].strip()
+            warnings = ground_numbers(script_text, req.articles)
+        else:
+            # Default: deterministic assembly from the feeds' own words (no model call).
+            script_text = assemble_script(kept, req.anchor_name or "Alex")
+            warnings = []  # spoken text == extracted text
     except RuntimeError as err:
         raise HTTPException(status_code=503, detail=str(err))
 
     return {
+        "mode": req.mode,
         "script": script_text,
-        "story_metadata": processed_stories,
-        "grounding_warnings": ground_numbers(script_text, req.articles),
+        "story_metadata": kept,
+        "grounding_warnings": warnings,
+        "omitted_for_load": len(omitted),
     }
 
 

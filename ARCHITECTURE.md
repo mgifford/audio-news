@@ -1,0 +1,67 @@
+# Architecture
+
+This documents the **actual** layout of `audio-news`, correcting a few common
+misdescriptions.
+
+```
+[ GitHub repo — source + CI/CD ]
+      │  .github/workflows/sync-to-hf-space.yml
+      │    1. CI gate (py_compile, node --check, sources.json, pytest)
+      │    2. force-push main to the Space (stamps BUILD_SHA)
+      │    3. wait until /api/health reports that exact build
+      ▼
+[ Hugging Face Docker Space — one origin ]
+   FastAPI (app.py) on port 7860
+   ├── /api/health, /api/generate-bulletin, /mcp/tools
+   ├── local GGUF via llama-cpp-python (Qwen2.5-1.5B), loaded lazily
+   └── serves the frontend files from the repo root via an explicit allowlist
+       (index.html, styles.css, app.js, sources.json) — NOT a /static dir
+      ▼
+[ Browser ]
+   reader UI + theme, localStorage prefs/history, Web Speech API playback,
+   visible transcript, Edge `read:` links (Edge only)
+
+[ Scheduled: .github/workflows/prefetch-feeds.yml ]
+   every 6h fetch feeds server-side -> commit feeds-cache.json ([skip ci])
+```
+
+## Points that are often stated wrong
+
+- **The deploy workflow is `sync-to-hf-space.yml`**, not `deploy-hf.yml`. There is
+  deliberately no second workflow (two would race and double-build). It is
+  CI-gated and health-gated, not a bare push-on-push.
+- **The frontend is served from the repo root via a file allowlist**, not a
+  `/static` directory. `app.py`, the `Dockerfile`, and docs are never web-served.
+- **CORS** defaults to the project's Pages origin plus a `*.hf.space` regex
+  (configurable via `ALLOWED_ORIGINS`), not a wildcard. On the Space the frontend
+  is same-origin, so CORS is not exercised there.
+- **`llama-cpp-python` is installed as a prebuilt CPU wheel**, not compiled
+  (compiling OOM-killed the HF builder).
+
+## Bulletin generation: deterministic by default (hybrid)
+
+The model classifies each story against the SJN pillars (`temperature=0.0`). The
+spoken bulletin is then produced one of two ways:
+
+- **Deterministic (default).** `assemble_script` builds the bulletin from the
+  feeds' own title and summary plus fixed transitions and the action anchor. The
+  spoken text equals the extracted text, so nothing is invented and URLs are never
+  spoken.
+- **Generative (opt-in, labelled).** A local model rephrases into broadcast prose.
+  It is grounding-checked and shown as "AI-rephrased"; the "no invented facts"
+  guarantee does **not** hold in this mode, which is why it is off by default.
+
+A **cognitive-load cap** keeps crisis/heavy stories to at most one in three in any
+bulletin (both modes).
+
+## Integrity boundaries (carried from PHASE0 / ADR 0001)
+
+- Extractive by default; the model never fabricates links (URLs travel as metadata
+  and are attached by the UI).
+- Every bulletin has a visible transcript equal to what is spoken.
+- Deploys are verified against `/api/health`'s `build` SHA, so a green pipeline
+  means *this* build is live, not merely that something responds.
+
+## Licence
+
+AGPL-3.0-or-later. The running app links to its source (AGPL §13) in the footer.

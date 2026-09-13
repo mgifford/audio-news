@@ -13,7 +13,32 @@ client = TestClient(m.app)
 def test_health_does_not_load_model():
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json()["model_loaded"] is False
+    body = r.json()
+    assert body["model_loaded"] is False
+    assert "build" in body  # SHA-stamped so the deploy check verifies this exact build
+
+
+def test_load_cap_limits_crisis_to_one_in_three():
+    stories = [
+        {"is_crisis": True}, {"is_crisis": True}, {"is_crisis": True},
+        {"is_crisis": False}, {"is_crisis": False}, {"is_crisis": False},
+    ]
+    kept, omitted = m.apply_load_cap(stories)
+    # 6 stories -> at most 2 crisis kept; the third crisis is omitted.
+    assert sum(1 for s in kept if s["is_crisis"]) == 2
+    assert len(omitted) == 1
+    assert all(s["is_crisis"] for s in omitted)
+
+
+def test_assemble_script_is_extractive_and_omits_urls():
+    stories = [{
+        "scope": "local", "source": "CBC", "title": "Co-op cuts bills",
+        "summary": "A pilot helped 200 homes.", "url": "https://example.org/x",
+        "is_crisis": False, "action_anchor": "",
+    }]
+    script = m.assemble_script(stories, "Alex")
+    assert "Co-op cuts bills" in script and "200 homes" in script
+    assert "https://" not in script  # URLs are never spoken (link lineage)
 
 
 def test_mcp_manifest_lists_tools():

@@ -382,6 +382,7 @@ async function generateAIBroadcastScript(deckItems) {
   if (!deckItems || deckItems.length === 0) return;
   updateStatus('Sending the deck to the AI engine for a broadcast script…');
 
+  const generative = document.getElementById('generativeMode').checked;
   const payload = {
     articles: deckItems.map(item => ({
       title: item.title,
@@ -390,7 +391,8 @@ async function generateAIBroadcastScript(deckItems) {
       scope: item.scope,
       source_name: item.sourceName
     })),
-    anchor_name: 'Alex'
+    anchor_name: 'Alex',
+    mode: generative ? 'generative' : 'deterministic'
   };
 
   try {
@@ -403,7 +405,7 @@ async function generateAIBroadcastScript(deckItems) {
     const data = await res.json();
 
     recordHistory(deckItems);
-    playScriptWithTTS(data.script, data.story_metadata || [], data.grounding_warnings || []);
+    playScriptWithTTS(data.script, data.story_metadata || [], data.grounding_warnings || [], data.mode);
   } catch (err) {
     console.warn('AI backend unreachable; falling back to the local reader.', err);
     updateStatus('AI engine unavailable — reading the deck with the local reader instead.', true);
@@ -411,11 +413,11 @@ async function generateAIBroadcastScript(deckItems) {
   }
 }
 
-function playScriptWithTTS(scriptText, storyMetadata, warnings) {
+function playScriptWithTTS(scriptText, storyMetadata, warnings, mode) {
   // Strip production cues like "[AUDIO: ...]" so display and speech stay identical (parity).
   const spoken = scriptText.replace(/\[AUDIO:.*?\]/g, ' ').replace(/\s+/g, ' ').trim();
-  renderScript(spoken, storyMetadata, warnings);
-  speak(spoken, 'Reading the AI broadcast script…');
+  renderScript(spoken, storyMetadata, warnings, mode);
+  speak(spoken, 'Reading the broadcast script…');
 }
 
 // Shared speech path for both readers: consistent state, lang, and stop handling.
@@ -461,10 +463,17 @@ function clearScript() {
 // visually. The script body is not an aria-live region — a full-bulletin live
 // announcement would be verbose and collide with the TTS playback — so instead we
 // move focus to the card and announce readiness through the status region.
-function renderScript(spoken, storyMetadata, warnings) {
+function renderScript(spoken, storyMetadata, warnings, mode) {
   const card = document.getElementById('broadcastScriptCard');
   const body = document.getElementById('scriptTextBody');
   body.textContent = '';
+
+  const note = document.createElement('p');
+  note.className = 'mode-note';
+  note.textContent = mode === 'generative'
+    ? 'AI-rephrased by a local model — verify against the sources below.'
+    : 'Assembled from the sources’ own words (not AI-rephrased).';
+  body.appendChild(note);
 
   if (warnings && warnings.length) {
     const warn = document.createElement('p');

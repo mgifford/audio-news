@@ -62,22 +62,30 @@ jobs:
             echo "::error::HF_TOKEN secret is not set. Add it under Settings -> Secrets and variables -> Actions, then re-run." >&2
             exit 1
           fi
+          # Stamp the deployed commit so /api/health can prove which build is live.
+          # This commit is pushed only to the Space (never back to origin), and is
+          # recreated on each deploy, so it does not accumulate on GitHub.
+          echo "${GITHUB_SHA}" > BUILD_SHA
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add BUILD_SHA
+          git commit -m "deploy: stamp ${GITHUB_SHA}" --no-verify
           # The token authenticates the push; the username field is ignored by HF.
           git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}.git" HEAD:main
 
-      - name: Wait for the Space to report healthy
+      - name: Wait for the Space to report this build healthy
         env:
           HEALTH_URL: https://mgifford-audio-news.hf.space/api/health
         run: |
-          echo "Polling ${HEALTH_URL} (the Space rebuilds and cold-starts; this can take several minutes)…"
+          echo "Polling ${HEALTH_URL} for build ${GITHUB_SHA} (rebuild + cold start can take minutes)…"
           for i in $(seq 1 60); do   # up to ~20 min at 20s intervals
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${HEALTH_URL}" || echo 000)
-            if [ "${code}" = "200" ]; then
-              echo "Space healthy (HTTP 200) after ~$((i*20))s."
+            body=$(curl -s --max-time 15 "${HEALTH_URL}" || true)
+            if echo "${body}" | grep -q "\"build\":\"${GITHUB_SHA}\""; then
+              echo "Space healthy and serving build ${GITHUB_SHA} after ~$((i*20))s."
               exit 0
             fi
-            echo "  attempt ${i}: HTTP ${code}; waiting…"
+            echo "  attempt ${i}: not yet (a stale container or still building); waiting…"
             sleep 20
           done
-          echo "::error::Space did not report healthy in time. Check the Space build logs." >&2
+          echo "::error::Space did not report this build healthy in time. Check the Space build logs." >&2
           exit 1

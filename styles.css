@@ -208,6 +208,10 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   font-size: 1rem;
 }
 
+.mode-control { font-size: 0.9rem; }
+.mode-control label { display: flex; gap: 0.5rem; align-items: flex-start; font-weight: 400; }
+.mode-note { color: var(--text-muted); font-size: 0.85rem; margin: 0 0 0.75rem; }
+
 .script-card .script-header { margin-bottom: 0.75rem; }
 .script-card h2 { margin: 0; font-size: 1.2rem; }
 .script-body { white-space: pre-wrap; line-height: 1.7; }
