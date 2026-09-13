@@ -59,5 +59,6 @@ overwrites them.
 
 - Make `HF_TOKEN` a fine-grained token scoped to just this Space (write), not an
   account-wide token.
-- First Docker build is slow (compiles `llama-cpp` against OpenBLAS, downloads the
-  ~1.1 GB model); later builds are cached.
+- First Docker build installs a prebuilt `llama-cpp-python` CPU wheel and downloads
+  the ~1.1 GB model; later builds are cached. (Source compilation OOM-killed the HF
+  build container, so a prebuilt wheel is used.)

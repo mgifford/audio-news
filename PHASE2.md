@@ -17,8 +17,8 @@ the Phase 1 frontend from one origin.
   - Same-origin static serving of `index.html`, `styles.css`, `app.js`,
     `sources.json` via an explicit allowlist (so `app.py`, the `Dockerfile`, and
     docs are never served over the web).
-- **`Dockerfile`** — CPU container; builds `llama-cpp-python` against OpenBLAS and
-  downloads the GGUF model at build time.
+- **`Dockerfile`** — CPU container; installs a prebuilt `llama-cpp-python` CPU wheel
+  (no source compile) and downloads the GGUF model at build time.
 - **`requirements.txt`** — backend dependencies.
 - **Frontend** — a **Generate AI broadcast** control and a visible transcript.
 
@@ -58,8 +58,9 @@ The Space `mgifford/audio-news` moves from Static to **Docker** SDK:
    `app_port: 7860` front matter in `README.md` drives this on sync).
 2. The existing `HF_TOKEN` GitHub Action still mirrors `main` to the Space; on
    push, HF builds the `Dockerfile`.
-3. First build downloads the model (~1.1 GB) and compiles `llama-cpp-python`, so
-   it is slow. Later builds are cached.
+3. First build installs a prebuilt `llama-cpp-python` CPU wheel and downloads the
+   model (~1.1 GB). Later builds are cached. (Compiling from source OOM-killed HF's
+   build container, so the prebuilt wheel is used instead.)
 
 ### Model
 
