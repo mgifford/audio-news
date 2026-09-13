@@ -12,7 +12,7 @@ misdescriptions.
       ▼
 [ Hugging Face Docker Space — one origin ]
    FastAPI (app.py) on port 7860
-   ├── /api/health, /api/generate-bulletin, /mcp/tools
+   ├── /api/health, /api/generate-bulletin, /api/feeds, /mcp/tools
    ├── local GGUF via llama-cpp-python (Qwen2.5-1.5B), loaded lazily
    └── serves the frontend files from the repo root via an explicit allowlist
        (index.html, styles.css, app.js, sources.json) — NOT a /static dir
@@ -53,6 +53,20 @@ spoken bulletin is then produced one of two ways:
 
 A **cognitive-load cap** keeps crisis/heavy stories to at most one in three in any
 bulletin (both modes).
+
+## Feed sourcing (no reliance on a third-party proxy)
+
+The browser gets stories in this order, most trustworthy first:
+
+1. **`/api/feeds`** — the backend fetches the **allowlisted** feeds in `sources.json`
+   server-side (no CORS, no third party). It only ever fetches registered feeds,
+   never a caller-supplied URL, so it is not an open proxy. Cached in memory (TTL).
+2. **`feeds-cache.json`** — the scheduled pre-fetch commits this; used on a static
+   host (e.g. GitHub Pages) when there is no backend, if recent enough.
+3. **Live CORS proxy** — last-resort fallback for a static host with no cache.
+
+The public `allorigins.win` proxy is only the step-3 fallback; the Space uses
+step 1, so a proxy outage no longer empties the deck.
 
 ## Integrity boundaries (carried from PHASE0 / ADR 0001)
 

@@ -84,19 +84,36 @@ async function loadFeedRegistry() {
   await loadFeedCache();
 }
 
-// Optional server-side pre-fetched cache (feeds-cache.json). When present and fresh
-// it is used instead of the browser CORS proxy — no third party sees the reader's
-// activity. A stale or missing cache silently falls back to the live proxy.
+// Prefer server-side feeds so the browser never depends on a third-party CORS proxy:
+//   1) backend /api/feeds (same-origin on the Space; fetched server-side, no proxy)
+//   2) static feeds-cache.json (kept fresh by the scheduled pre-fetch, e.g. on Pages)
+// A miss at both leaves APP_STATE.cache null and the deck builder falls back to the
+// live proxy per scope.
 async function loadFeedCache() {
+  // 1) backend endpoint
+  try {
+    const res = await fetch(`${API_BASE}/api/feeds`, { cache: 'no-store' });
+    if (res.ok) {
+      const cache = await res.json();
+      if (cacheHasItems(cache)) { APP_STATE.cache = cache; return; }
+    }
+  } catch { /* no backend here (e.g. static host): try the static cache next */ }
+
+  // 2) static pre-fetched cache, only if recent enough
   try {
     const res = await fetch('feeds-cache.json', { cache: 'no-store' });
     if (!res.ok) return;
     const cache = await res.json();
     const ageMs = Date.now() - new Date(cache.generatedAt).getTime();
-    if (Number.isFinite(ageMs) && ageMs <= CACHE_MAX_AGE_MS) {
+    if (Number.isFinite(ageMs) && ageMs <= CACHE_MAX_AGE_MS && cacheHasItems(cache)) {
       APP_STATE.cache = cache;
     }
-  } catch { /* no cache: fall back to the live proxy */ }
+  } catch { /* fall back to the live proxy */ }
+}
+
+function cacheHasItems(cache) {
+  const geo = cache && cache.geography;
+  return !!geo && Object.values(geo).some(list => list.some(s => s.items && s.items.length));
 }
 
 function bindUIEvents() {

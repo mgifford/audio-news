@@ -6,8 +6,47 @@ routing, static serving, schema, and the grounding guardrail on a cheap runner."
 from fastapi.testclient import TestClient
 
 import app as m
+import feedfetch
 
 client = TestClient(m.app)
+
+_RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>Co-op cuts bills</title><description>&lt;p&gt;A pilot helped 200 homes.&lt;/p&gt;</description><link>https://example.org/a</link></item>
+<item><title>No link</title><description>x</description></item>
+</channel></rss>"""
+
+
+def test_feedfetch_parse_is_extractive_and_drops_linkless():
+    items = feedfetch.parse_feed(_RSS)
+    assert len(items) == 1  # linkless item dropped (link lineage)
+    assert items[0]["link"] == "https://example.org/a"
+    assert "<" not in items[0]["description"] and "200 homes" in items[0]["description"]
+
+
+def test_feedfetch_build_cache_offline():
+    sources = {"geography": {"local": [{"id": "x", "name": "X", "url": "https://x", "type": "civic"}]}}
+    cache = feedfetch.build_cache(sources, fetcher=lambda url: (200, _RSS))
+    assert cache["geography"]["local"][0]["itemCount"] == 1
+    assert feedfetch.total_items(cache) == 1
+
+
+def test_api_feeds_only_reads_registry(monkeypatch):
+    # /api/feeds must never fetch a caller-supplied URL — only sources.json feeds.
+    seen = []
+    monkeypatch.setattr(feedfetch, "fetch", lambda url: (seen.append(url), (200, _RSS))[1])
+    m._feeds_cache["data"] = None  # bypass TTL cache
+    r = client.get("/api/feeds")
+    assert r.status_code == 200
+    assert "geography" in r.json()
+    # every fetched URL came from the registry, not from the request
+    registry = {f["url"] for feeds in json_sources()["geography"].values() for f in feeds}
+    assert seen and all(u in registry for u in seen)
+
+
+def json_sources():
+    import json, os
+    with open(os.path.join(m.BASE_DIR, "sources.json")) as fh:
+        return json.load(fh)
 
 
 def test_health_does_not_load_model():

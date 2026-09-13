@@ -20,12 +20,15 @@ health check responds immediately, and the pure helpers are unit-testable.
 import os
 import re
 import json
+import time
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+import feedfetch
 
 app = FastAPI(title="Solutions News Radio Engine", version="2.0.0")
 
@@ -335,6 +338,27 @@ def generate_bulletin(req: BulletinRequest):
         "grounding_warnings": warnings,
         "omitted_for_load": len(omitted),
     }
+
+
+_FEEDS_TTL = int(os.getenv("FEEDS_TTL", "600"))  # seconds; avoid re-fetching on every deck build
+_feeds_cache = {"at": 0.0, "data": None}
+
+
+@app.get("/api/feeds")
+def api_feeds():
+    """Fetch the ALLOWLISTED feeds in sources.json server-side (no CORS proxy, no
+    third party). Only registered feeds are fetched — never a caller-supplied URL —
+    so this is not an open proxy. Cached in memory for FEEDS_TTL seconds."""
+    now = time.time()
+    if _feeds_cache["data"] is None or now - _feeds_cache["at"] > _FEEDS_TTL:
+        try:
+            with open(os.path.join(BASE_DIR, "sources.json"), encoding="utf-8") as fh:
+                sources = json.load(fh)
+        except OSError as err:
+            raise HTTPException(status_code=500, detail=f"sources.json unavailable: {err}")
+        _feeds_cache["data"] = feedfetch.build_cache(sources)
+        _feeds_cache["at"] = now
+    return _feeds_cache["data"]
 
 
 @app.get("/mcp/tools")

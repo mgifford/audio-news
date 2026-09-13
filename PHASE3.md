@@ -44,10 +44,9 @@ the last 12 hours**, the deck is built from it (no proxy). A stale or missing ca
 silently falls back to the live CORS proxy, so:
 
 - On **GitHub Pages**, the cron keeps the cache fresh, so the proxy is rarely used.
-- On the **Docker Space**, the baked cache is only as fresh as the last build; once
-  it is older than 12 hours the client falls back to the live proxy. Serving fresh
-  feeds on the Space without rebuilds would need a runtime `/api/feeds` endpoint —
-  a natural Phase 3.x follow-up.
+- On the **Docker Space**, the client uses the runtime **`/api/feeds`** endpoint
+  (added later): the backend fetches the allowlisted feeds server-side, so fresh
+  feeds are served without rebuilds and without the third-party CORS proxy.
 
 ## Rollback
 

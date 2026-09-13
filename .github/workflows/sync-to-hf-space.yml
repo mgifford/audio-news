@@ -41,7 +41,7 @@ jobs:
           python -c "import json; json.load(open('sources.json'))"
       - name: Backend tests (no model needed; llama-cpp is imported lazily)
         run: |
-          pip install "fastapi>=0.110" "pydantic>=2.6" httpx pytest
+          pip install "fastapi>=0.110" "pydantic>=2.6" httpx pytest feedparser
           python -m pytest -q   # `python -m` puts the repo root on sys.path so `import app` resolves
 
   sync:
@@ -89,3 +89,16 @@ jobs:
           done
           echo "::error::Space did not report this build healthy in time. Check the Space build logs." >&2
           exit 1
+
+      - name: Feed smoke (informational; does not fail the deploy)
+        continue-on-error: true
+        env:
+          FEEDS_URL: https://mgifford-audio-news.hf.space/api/feeds
+        run: |
+          # Feeds can be individually flaky, so this reports counts rather than gating.
+          body=$(curl -s --max-time 60 "${FEEDS_URL}" || true)
+          total=$(echo "${body}" | grep -o "\"itemCount\":[0-9]*" | grep -o "[0-9]*" | paste -sd+ - | bc 2>/dev/null || echo "?")
+          echo "Server-side /api/feeds total items: ${total}"
+          if [ "${total}" = "0" ]; then
+            echo "::warning::/api/feeds returned 0 items — every feed may be unreachable server-side. Investigate."
+          fi
