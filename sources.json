@@ -27,10 +27,11 @@
       "name": "Toronto", "country": "Canada", "language": "en",
       "local": [
         { "id": "cbc_toronto", "name": "CBC Toronto", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-toronto" },
-        { "id": "toronto_star", "name": "Toronto Star", "url": "https://www.thestar.com/feed/" }
+        { "id": "blogto", "name": "BlogTO", "url": "https://www.blogto.com/rss/" },
+        { "id": "cp24", "name": "CP24 Toronto", "url": "https://www.cp24.com/rss/toronto-1.822289" }
       ],
       "regional": [
-        { "id": "global_ontario", "name": "Global News Ontario", "url": "https://globalnews.ca/ontario/feed/" }
+        { "id": "global_toronto", "name": "Global News Toronto", "url": "https://globalnews.ca/toronto/feed/" }
       ],
       "national": [
         { "id": "cbc_top", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories" }
@@ -56,7 +57,7 @@
         { "id": "eugene_weekly", "name": "Eugene Weekly", "url": "https://eugeneweekly.com/feed/" }
       ],
       "regional": [
-        { "id": "opb", "name": "Oregon Public Broadcasting", "url": "https://www.opb.org/rss/news/" }
+        { "id": "opb", "name": "Oregon Public Broadcasting", "url": "https://www.opb.org/news/feed/" }
       ],
       "national": [
         { "id": "npr_news", "name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml" }
@@ -94,12 +95,12 @@
     { "id": "new_humanitarian", "name": "The New Humanitarian", "url": "https://www.thenewhumanitarian.org/rss.xml" },
     { "id": "bbc_world", "name": "BBC World Service", "url": "https://feeds.bbci.co.uk/news/world/rss.xml" },
     { "id": "mongabay", "name": "Mongabay Environmental News", "url": "https://news.mongabay.com/feed/" },
-    { "id": "cs_monitor", "name": "Christian Science Monitor", "url": "https://www.csmonitor.com/rss/top.rss" }
+    { "id": "guardian_world", "name": "The Guardian (World)", "url": "https://www.theguardian.com/world/rss" }
   ],
   "beats": [
     { "id": "kff_health", "name": "KFF Health News", "url": "https://kffhealthnews.org/feed/", "beat": "health" },
     { "id": "arstechnica", "name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "beat": "technology" },
-    { "id": "marketplace", "name": "Marketplace", "url": "https://www.marketplace.org/feed/", "beat": "business" },
+    { "id": "npr_business", "name": "NPR Business", "url": "https://feeds.npr.org/1006/rss.xml", "beat": "business" },
     { "id": "propublica", "name": "ProPublica", "url": "https://www.propublica.org/feed/", "beat": "government" }
   ]
 }

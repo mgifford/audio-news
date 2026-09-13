@@ -13,7 +13,10 @@ MAX_ITEMS = 12
 MAX_DESC = 480       # more room so a summary is substantial, not a one-liner
 TIMEOUT = 12          # per-feed cap; concurrency keeps total wall time near one feed
 MAX_WORKERS = 8       # feeds are fetched in parallel, not one after another
-USER_AGENT = "audio-news/1.0 (+https://github.com/mgifford/audio-news)"
+# Some publishers (e.g. CBC) return nothing to a non-browser User-Agent, so present a
+# common desktop browser UA. This is a read-only RSS fetch of public feeds.
+USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/124.0 Safari/537.36 audio-news/1.0 (+https://github.com/mgifford/audio-news)")
 
 _TAG_RE = re.compile(r"<[^>]*>")
 _WS_RE = re.compile(r"\s+")
