@@ -119,33 +119,38 @@ class BulletinRequest(BaseModel):
 class SoJoEvaluation(BaseModel):
     is_solutions_story: bool
     is_unresolved_crisis: bool
-    has_response: bool
-    has_evidence: bool
-    has_limitations: bool
-    action_anchor: str
-    clean_summary: str
+    # SJN pillars, EXTRACTED verbatim/near-verbatim from the article — empty when the
+    # article does not state them. Never invented (that is the anti-hallucination line).
+    response: str = ""       # solutions: what is being done about the problem
+    evidence: str = ""       # solutions: evidence the response is (or isn't) working
+    limitation: str = ""     # solutions: caveat / where it falls short
+    root_cause: str = ""     # crisis: the underlying cause/context as stated
+    action_anchor: str = ""  # crisis: mutual-aid or resource mentioned in the article
+    clean_summary: str = ""  # 1-2 sentence core fact summary
 
 
-# --- Prompts (extractive, deterministic) -------------------------------------
+# --- Prompts (extractive) ----------------------------------------------------
 
 SOJO_EVAL_PROMPT = """<|im_start|>system
-You are an expert news analyst trained by the Solutions Journalism Network (SJN).
-Evaluate the provided news article against the 4 Pillars of Solutions Journalism.
+You are a news analyst trained by the Solutions Journalism Network (SJN). Classify the
+article and EXTRACT the SJN pillars that are actually present in it.
 
-Rules:
-1. 'is_solutions_story': True ONLY if it covers a concrete effort to solve a problem with evidence.
-2. 'is_unresolved_crisis': True if it describes an active disaster, famine, or war without an immediate solution.
-3. Extractive Accuracy: Base evaluation STRICTLY on the provided text. Do not invent details.
+Hard rules:
+- Use ONLY the provided text. Copy short phrases from it. NEVER invent a response, number, name, or cause.
+- If a field is not stated in the article, return an empty string "". Do not guess.
+- 'is_solutions_story': true ONLY if the article reports a concrete effort to solve a problem.
+- 'is_unresolved_crisis': true if it reports an active crisis (disaster, famine, war) with no solution.
 
-Return JSON ONLY matching this format:
+Return JSON ONLY:
 {{
   "is_solutions_story": boolean,
   "is_unresolved_crisis": boolean,
-  "has_response": boolean,
-  "has_evidence": boolean,
-  "has_limitations": boolean,
-  "action_anchor": "Brief statement highlighting mutual aid or policy resources if crisis, else empty",
-  "clean_summary": "1-2 sentence core fact summary"
+  "response": "solutions: what is being done, as a short phrase from the text, else \\"\\"",
+  "evidence": "solutions: evidence it is working, from the text, else \\"\\"",
+  "limitation": "solutions: a stated caveat/limitation, from the text, else \\"\\"",
+  "root_cause": "crisis: the stated cause/context, from the text, else \\"\\"",
+  "action_anchor": "crisis: mutual-aid or resource named in the text, else \\"\\"",
+  "clean_summary": "1-2 sentence core fact summary from the text"
 }}
 <|im_end|>
 <|im_start|>user
@@ -155,22 +160,38 @@ Summary: {summary}
 <|im_start|>assistant
 """
 
+# A short, generic style exemplar (cadence only — not about any real event) so the
+# generative voice sounds like a broadcast. It teaches rhythm, not content.
+RADIO_STYLE_EXAMPLE = (
+    "Good evening. Our top stories: a city program cuts commute times, and relief "
+    "reaches a flood-hit region. First tonight, the details. Officials say the new "
+    "transit lane has been in place for six months. Early figures point to shorter "
+    "trips, though planners caution it is still a pilot. Turning to the wider picture, "
+    "aid groups report supplies are arriving, even as access remains difficult. "
+    "If you would like to help, resource links are in your player deck. That is your briefing."
+)
+
 RADIO_SCRIPT_PROMPT = """<|im_start|>system
-You are a lead news editor at a global public news service like the BBC World Service.
-Write a continuous, spoken 2-minute radio news bulletin script based ONLY on the provided JSON articles.
+You are a lead editor at a global public news service like the BBC World Service.
+Write a continuous, spoken radio news bulletin from ONLY the provided JSON stories.
 
-Formatting Rules for Text-to-Speech (TTS):
-1. Start with an opening news sting indicator: "[AUDIO: News Sting - 3 seconds]".
-2. Begin with a 15-second opening summary of the top stories.
-3. Use natural spoken broadcast transitions between geographic tiers (e.g., "Turning to local news in Ontario...", "Across the country today...", "In international developments...").
-4. If an article has an 'action_anchor', include a gentle broadcast transition pointing listeners to verified mutual aid or resource links in their player deck.
-5. Spell out large numbers as words (e.g., "three million" not "$3M") so speech engines read them naturally.
-6. Do NOT include markdown headers, bold text, or URLs in the spoken body text.
+Structure:
+1. Open with "Top stories:" naming each story in one clause.
+2. Then "First, the details." and tell each story. For a solutions story, follow the SJN
+   arc using the story's fields: the response, then the evidence, then the limitation.
+   For a crisis, lead with dignity and the root_cause, then the action_anchor.
+3. Use natural spoken transitions between tiers ("Across the country...", "Internationally...").
+4. Spell large numbers as words. No markdown, no URLs.
 
-Use ONLY facts from the input stories. Do NOT invent outside information, numbers, names, or causes.
+Absolute rule: use ONLY facts in the JSON (title, summary, response, evidence, limitation,
+root_cause, action_anchor). Do NOT add any fact, number, name, cause, or claim not present.
+If a field is empty, do not fabricate it.
+
+Style reference (cadence only, NOT content to reuse):
+{style_example}
 <|im_end|>
 <|im_start|>user
-Articles JSON:
+Stories JSON:
 {articles_json}
 <|im_end|>
 <|im_start|>assistant
@@ -247,24 +268,69 @@ _SCOPE_TRANSITIONS = {
     "local": "In local news",
     "regional": "Turning to regional news",
     "national": "Across the country",
-    "international": "In international developments",
+    "international": "Internationally",
 }
+_SCOPE_WEIGHT = {"international": 3, "national": 3, "regional": 2, "local": 1}
+
+
+def _sent(text: str) -> str:
+    """Tidy an extracted phrase into a spoken sentence: capitalize the first letter and
+    end with terminal punctuation. Content is unchanged (still extractive)."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    text = text[0].upper() + text[1:]
+    return text if text[-1:] in ".!?" else text + "."
+
+
+def _story_order(stories: list[dict]) -> list[dict]:
+    """Lead with breaking/top news: crises first, then broader scopes."""
+    return sorted(
+        stories,
+        key=lambda s: (1 if s.get("is_crisis") else 0, _SCOPE_WEIGHT.get(s.get("scope"), 0)),
+        reverse=True,
+    )
 
 
 def assemble_script(stories: list[dict], anchor_name: str = "Alex") -> str:
     """Build the spoken bulletin from the feeds' own words — no model, so the spoken
-    text equals the extracted text (nothing invented). URLs are never spoken."""
+    text equals the extracted text (nothing invented). It leads with a top-stories
+    headline block, then tells each story in its SJN arc. URLs are never spoken."""
+    if not stories:
+        return ""
+    ordered = _story_order(stories)
+
     parts = [f"This is your news bulletin, with {anchor_name}."]
+    headlines = "; ".join(s["title"].rstrip(".") for s in ordered)
+    parts.append(f"Our top stories: {headlines}.")
+    parts.append("Now, the details.")
+
     last_scope = None
-    for s in stories:
-        if s["scope"] != last_scope:
-            parts.append(f"{_SCOPE_TRANSITIONS.get(s['scope'], 'Next')}.")
-            last_scope = s["scope"]
-        parts.append(f"From {s['source']}: {s['title']}.")
-        if s.get("summary"):
-            parts.append(s["summary"] if s["summary"].endswith(".") else s["summary"] + ".")
-        if s.get("is_crisis") and s.get("action_anchor"):
-            parts.append(f"{s['action_anchor']} A resource link is in your player deck.")
+    for s in ordered:
+        if s.get("scope") != last_scope:
+            transition = _SCOPE_TRANSITIONS.get(s.get("scope"), "Next")
+            parts.append(f"{transition}, from {s['source']}: {_sent(s['title'])}")
+            last_scope = s.get("scope")
+        else:
+            parts.append(f"Also from {s['source']}: {_sent(s['title'])}")
+
+        pillars = [s.get("response"), s.get("evidence"), s.get("limitation")]
+        if s.get("is_solutions_story") and any(pillars):
+            # Solutions arc — only the pillars actually present in the source.
+            if s.get("response"):
+                parts.append(f"The response: {_sent(s['response'])}")
+            if s.get("evidence"):
+                parts.append(f"The evidence so far: {_sent(s['evidence'])}")
+            if s.get("limitation"):
+                parts.append(f"The limitation: {_sent(s['limitation'])}")
+        elif s.get("is_crisis"):
+            # Crisis & mutual-aid arc — dignity, root cause, then an action anchor.
+            parts.append(_sent(s.get("root_cause") or s.get("summary") or ""))
+            if s.get("action_anchor"):
+                parts.append(f"If you would like to help: {_sent(s['action_anchor'])} A resource link is in your player deck.")
+        elif s.get("summary"):
+            parts.append(_sent(s["summary"]))
+
     parts.append("That is your briefing.")
     return " ".join(p.strip() for p in parts if p.strip())
 
@@ -278,14 +344,10 @@ def evaluate_article(article: RawArticle) -> SoJoEvaluation:
     try:
         return SoJoEvaluation(**extract_json_object(raw))
     except Exception:
-        # Fallback keeps the pipeline deterministic and extractive if JSON strays.
+        # Fallback keeps the pipeline extractive if JSON strays: no pillars, just the summary.
         return SoJoEvaluation(
             is_solutions_story=False,
             is_unresolved_crisis=False,
-            has_response=False,
-            has_evidence=False,
-            has_limitations=False,
-            action_anchor="",
             clean_summary=article.summary[:200],
         )
 
@@ -317,8 +379,12 @@ def generate_bulletin(req: BulletinRequest):
                 "title": art.title,
                 "summary": ev.clean_summary,
                 "url": art.url,  # link lineage: straight from the client, never model-generated
-                "is_sojo": ev.is_solutions_story,
+                "is_solutions_story": ev.is_solutions_story,
                 "is_crisis": ev.is_unresolved_crisis,
+                "response": ev.response,
+                "evidence": ev.evidence,
+                "limitation": ev.limitation,
+                "root_cause": ev.root_cause,
                 "action_anchor": ev.action_anchor,
             })
 
@@ -329,8 +395,8 @@ def generate_bulletin(req: BulletinRequest):
             # Optional local-model rephrase. Clearly labelled and grounding-checked;
             # spoken text is no longer guaranteed to equal the source, hence the check.
             articles_json = json.dumps(kept, indent=2)
-            prompt = RADIO_SCRIPT_PROMPT.format(articles_json=articles_json)
-            resp = get_llm()(prompt, max_tokens=800, temperature=0.0, top_p=1.0, stop=["<|im_end|>"])
+            prompt = RADIO_SCRIPT_PROMPT.format(articles_json=articles_json, style_example=RADIO_STYLE_EXAMPLE)
+            resp = get_llm()(prompt, max_tokens=900, temperature=0.0, top_p=1.0, stop=["<|im_end|>"])
             script_text = resp["choices"][0]["text"].strip()
             warnings = ground_numbers(script_text, req.articles)
         else:

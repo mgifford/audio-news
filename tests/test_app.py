@@ -80,6 +80,40 @@ def test_assemble_script_is_extractive_and_omits_urls():
     assert "https://" not in script  # URLs are never spoken (link lineage)
 
 
+def test_assemble_script_leads_with_top_stories_headlines():
+    stories = [{"scope": "local", "source": "S", "title": "A local thing", "summary": "x"}]
+    script = m.assemble_script(stories)
+    assert "Our top stories:" in script and "Now, the details." in script
+
+
+def test_solutions_arc_uses_extracted_pillars():
+    stories = [{
+        "scope": "national", "source": "Grist", "title": "City cuts commute",
+        "summary": "s", "is_solutions_story": True,
+        "response": "a new transit lane", "evidence": "trips fell",
+        "limitation": "still a pilot", "action_anchor": "",
+    }]
+    script = m.assemble_script(stories)
+    assert "The response: A new transit lane." in script
+    assert "The evidence so far: Trips fell." in script
+    assert "The limitation: Still a pilot." in script
+
+
+def test_crisis_arc_and_breaking_first_ordering():
+    stories = [
+        {"scope": "local", "source": "L", "title": "Local fair", "summary": "s",
+         "is_solutions_story": False, "is_crisis": False},
+        {"scope": "international", "source": "TNH", "title": "Floods hit region", "summary": "s",
+         "is_crisis": True, "root_cause": "heavy rains", "action_anchor": "donate to relief"},
+    ]
+    script = m.assemble_script(stories)
+    # Breaking/international crisis leads the details ahead of the local item.
+    assert script.index("Floods hit region") < script.index("Local fair")
+    assert "Heavy rains." in script
+    assert "If you would like to help: Donate to relief." in script
+    assert "resource link is in your player deck" in script
+
+
 def test_mcp_manifest_lists_tools():
     names = [t["name"] for t in client.get("/mcp/tools").json()["tools"]]
     assert names == ["evaluate_sojo_story", "generate_radio_bulletin"]

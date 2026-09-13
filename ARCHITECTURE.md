@@ -43,11 +43,17 @@ misdescriptions.
 The model classifies each story against the SJN pillars (`temperature=0.0`). The
 spoken bulletin is then produced one of two ways:
 
-- **Deterministic (default).** `assemble_script` builds the bulletin from the
-  feeds' own title and summary plus fixed transitions and the action anchor. The
-  spoken text equals the extracted text, so nothing is invented and URLs are never
-  spoken.
-- **Generative (opt-in, labelled).** A local model rephrases into broadcast prose.
+The classifier also **extracts the SJN pillar phrases** present in each article
+(response, evidence, limitation, root cause, action anchor) — verbatim, empty when
+absent, never invented.
+
+- **Deterministic (default).** `assemble_script` opens with a top-stories headline
+  block (breaking/crisis and broader-scope items first), then tells each story in its
+  arc: a **solutions arc** (the response → the evidence → the limitation) or a
+  **crisis & mutual-aid arc** (root cause → an action anchor). It uses only the
+  extracted phrases, so spoken text equals source text and URLs are never spoken.
+- **Generative (opt-in, labelled).** A local model rephrases into broadcast prose,
+  guided by a style exemplar and the same SJN arc, using only the extracted fields.
   It is grounding-checked and shown as "AI-rephrased"; the "no invented facts"
   guarantee does **not** hold in this mode, which is why it is off by default.
 
