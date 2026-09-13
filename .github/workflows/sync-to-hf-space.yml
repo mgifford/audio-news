@@ -1,25 +1,51 @@
 name: Sync to Hugging Face Space
 
-# Mirrors this repository's main branch to the Hugging Face Space
-# https://huggingface.co/spaces/mgifford/audio-news (Static SDK).
+# Mirrors this repository's main branch to the Hugging Face Docker Space
+# https://huggingface.co/spaces/mgifford/audio-news, but only after fast CI passes,
+# then waits for the Space to report healthy.
 #
 # One-time setup: add a repository secret named HF_TOKEN
 # (Settings -> Secrets and variables -> Actions -> New repository secret).
 # Create the token at https://huggingface.co/settings/tokens with write access
-# to the Space. The Space's SDK must be set to "Static".
+# to the Space. The Space's SDK must be set to "Docker".
 
 on:
   push:
     branches: [main]
+    # Docs-only changes don't need a ~10-minute Docker rebuild. README is NOT listed
+    # here on purpose (its front matter is the Space config), and neither are
+    # sources.json / feeds-cache.json (the frontend reads them). paths-ignore can't
+    # negate, so the doc paths are listed explicitly rather than with a broad **/*.md.
+    paths-ignore:
+      - "PHASE*.md"
+      - "decisions/**"
   workflow_dispatch:
 
-# Avoid overlapping pushes to the Space.
 concurrency:
   group: hf-space-sync
   cancel-in-progress: true
 
 jobs:
+  # Cheap gate: fail here in seconds rather than 10 minutes into a Docker build.
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Static checks
+        run: |
+          python -m py_compile app.py scripts/prefetch_feeds.py
+          node --check app.js
+          python -c "import json; json.load(open('sources.json'))"
+      - name: Backend tests (no model needed; llama-cpp is imported lazily)
+        run: |
+          pip install "fastapi>=0.110" "pydantic>=2.6" httpx pytest
+          pytest -q
+
   sync:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - name: Check out full history
@@ -38,3 +64,20 @@ jobs:
           fi
           # The token authenticates the push; the username field is ignored by HF.
           git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}.git" HEAD:main
+
+      - name: Wait for the Space to report healthy
+        env:
+          HEALTH_URL: https://mgifford-audio-news.hf.space/api/health
+        run: |
+          echo "Polling ${HEALTH_URL} (the Space rebuilds and cold-starts; this can take several minutes)…"
+          for i in $(seq 1 60); do   # up to ~20 min at 20s intervals
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${HEALTH_URL}" || echo 000)
+            if [ "${code}" = "200" ]; then
+              echo "Space healthy (HTTP 200) after ~$((i*20))s."
+              exit 0
+            fi
+            echo "  attempt ${i}: HTTP ${code}; waiting…"
+            sleep 20
+          done
+          echo "::error::Space did not report healthy in time. Check the Space build logs." >&2
+          exit 1

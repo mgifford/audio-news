@@ -20,12 +20,17 @@ const MAX_DESC = 320;
 // History cap: number of recently-read story links remembered locally.
 const MAX_HISTORY = 50;
 
+// Use the pre-fetched cache only if it was generated within this window; otherwise
+// fall back to the live proxy so a stale baked cache never serves old news.
+const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
 const APP_STATE = {
   theme: localStorage.getItem('sojo_theme') || 'dark',
   ratios: readJSON('sojo_ratios', { local: 1, regional: 1, national: 2, international: 1 }),
   history: readJSON('sojo_history', []),
   currentDeck: [],
-  sources: null
+  sources: null,
+  cache: null
 };
 
 // Client-side CORS proxy so a static page can read cross-origin RSS.
@@ -76,6 +81,22 @@ async function loadFeedRegistry() {
   } catch (err) {
     updateStatus('Could not load sources.json. Make sure the page is served over http(s), not opened as a file.', true);
   }
+  await loadFeedCache();
+}
+
+// Optional server-side pre-fetched cache (feeds-cache.json). When present and fresh
+// it is used instead of the browser CORS proxy — no third party sees the reader's
+// activity. A stale or missing cache silently falls back to the live proxy.
+async function loadFeedCache() {
+  try {
+    const res = await fetch('feeds-cache.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const cache = await res.json();
+    const ageMs = Date.now() - new Date(cache.generatedAt).getTime();
+    if (Number.isFinite(ageMs) && ageMs <= CACHE_MAX_AGE_MS) {
+      APP_STATE.cache = cache;
+    }
+  } catch { /* no cache: fall back to the live proxy */ }
 }
 
 function bindUIEvents() {
@@ -206,16 +227,14 @@ async function generateNewsDeck() {
   const deck = [];
   const geoCategories = ['local', 'regional', 'national', 'international'];
 
+  const usingCache = !!APP_STATE.cache;
+
   for (const geo of geoCategories) {
     const targetCount = APP_STATE.ratios[geo];
     if (targetCount <= 0) continue;
 
-    const availableSources = APP_STATE.sources.geography[geo];
-    if (!availableSources || availableSources.length === 0) continue;
-
-    // Pick a random feed within this scope.
-    const source = availableSources[Math.floor(Math.random() * availableSources.length)];
-    const items = await fetchRSSFeed(source);
+    const { source, items } = await pickScopeStories(geo);
+    if (!source) continue;
 
     // Skip stories already in local history.
     const freshItems = items.filter(item => !APP_STATE.history.includes(item.link));
@@ -240,10 +259,28 @@ async function generateNewsDeck() {
   document.getElementById('generateBroadcastBtn').disabled = !canPlay;
 
   if (deck.length > 0) {
-    updateStatus(`Built a fresh deck with ${deck.length} ${deck.length === 1 ? 'story' : 'stories'}.`);
+    const via = usingCache ? ' (from the pre-fetched cache)' : '';
+    updateStatus(`Built a fresh deck with ${deck.length} ${deck.length === 1 ? 'story' : 'stories'}${via}.`);
   } else {
     updateStatus('No new stories found. Try adjusting the sliders, or the feeds may be unreachable from this browser.');
   }
+}
+
+// Pick a random source for a scope and return its stories. Prefer the fresh
+// server-side cache (no proxy); otherwise fetch live through the CORS proxy.
+async function pickScopeStories(geo) {
+  const cached = APP_STATE.cache && APP_STATE.cache.geography && APP_STATE.cache.geography[geo];
+  if (cached && cached.length) {
+    const withItems = cached.filter(s => s.items && s.items.length);
+    const pool = withItems.length ? withItems : cached;
+    const source = pool[Math.floor(Math.random() * pool.length)];
+    return { source, items: source.items || [] };
+  }
+
+  const available = APP_STATE.sources.geography[geo];
+  if (!available || available.length === 0) return { source: null, items: [] };
+  const source = available[Math.floor(Math.random() * available.length)];
+  return { source, items: await fetchRSSFeed(source) };
 }
 
 function extractLink(item) {
