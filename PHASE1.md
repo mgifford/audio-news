@@ -94,3 +94,27 @@ python3 -m http.server 8000
 
 For GitHub Pages, enable Pages for the repository (Settings → Pages → deploy from
 the default branch, root). The site is plain static files with no build step.
+
+## Deploying to the Hugging Face Space
+
+The site also runs as a **Static SDK** Space at
+<https://huggingface.co/spaces/mgifford/audio-news>. Two pieces make this work:
+
+- The Space configuration lives in this repo's `README.md` front matter
+  (`sdk: static`), so the Space serves `index.html` from the repo root.
+- [`.github/workflows/sync-to-hf-space.yml`](.github/workflows/sync-to-hf-space.yml)
+  force-pushes `main` to the Space on every push (and on manual dispatch).
+
+One-time setup:
+
+1. Set the Space's **SDK to Static** in its settings (if it was created as
+   another type).
+2. Create a Hugging Face access token with write access to the Space at
+   <https://huggingface.co/settings/tokens>.
+3. Add it as a repository secret named **`HF_TOKEN`** under
+   Settings → Secrets and variables → Actions.
+
+After that, pushing to `main` publishes to both GitHub and the Space. The
+workflow force-pushes, so the Space's copy is always an exact mirror of `main`;
+edit content here, not on the Space.
+

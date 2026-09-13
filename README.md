@@ -1,3 +1,16 @@
+---
+title: audio-news
+emoji: 📻
+colorFrom: blue
+colorTo: indigo
+sdk: static
+pinned: false
+license: mit
+---
+
+<!-- The YAML block above configures the Hugging Face Space (Static SDK). It is
+     rendered as a small table on GitHub. On the Space it serves index.html. -->
+
 # audio-news
 
 A solutions-oriented audio reader: it turns public RSS feeds into short, spoken,
