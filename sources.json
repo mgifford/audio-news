@@ -11,96 +11,243 @@
   },
   "regions": {
     "ottawa": {
-      "name": "Ottawa", "country": "Canada", "language": "en",
+      "name": "Ottawa",
+      "country": "Canada",
+      "language": "en",
       "local": [
-        { "id": "cbc_ottawa", "name": "CBC Ottawa", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-ottawa" },
-        { "id": "ottawa_citizen", "name": "Ottawa Citizen", "url": "https://ottawacitizen.com/feed/" }
+        {
+          "id": "ottawa_citizen",
+          "name": "Ottawa Citizen",
+          "url": "https://ottawacitizen.com/feed/"
+        },
+        {
+          "id": "global_ottawa",
+          "name": "Global News Ottawa",
+          "url": "https://globalnews.ca/ottawa/feed/"
+        }
       ],
       "regional": [
-        { "id": "narwhal", "name": "The Narwhal", "url": "https://thenarwhal.ca/feed/" }
+        {
+          "id": "narwhal",
+          "name": "The Narwhal",
+          "url": "https://thenarwhal.ca/feed/"
+        }
       ],
       "national": [
-        { "id": "cbc_top", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories" }
+        {
+          "id": "globalnews",
+          "name": "Global News",
+          "url": "https://globalnews.ca/feed/"
+        }
       ]
     },
     "toronto": {
-      "name": "Toronto", "country": "Canada", "language": "en",
+      "name": "Toronto",
+      "country": "Canada",
+      "language": "en",
       "local": [
-        { "id": "cbc_toronto", "name": "CBC Toronto", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-toronto" },
-        { "id": "blogto", "name": "BlogTO", "url": "https://www.blogto.com/rss/" },
-        { "id": "cp24", "name": "CP24 Toronto", "url": "https://www.cp24.com/rss/toronto-1.822289" }
+        {
+          "id": "global_toronto",
+          "name": "Global News Toronto",
+          "url": "https://globalnews.ca/toronto/feed/"
+        },
+        {
+          "id": "citynews_toronto",
+          "name": "CityNews Toronto",
+          "url": "https://toronto.citynews.ca/feed/"
+        }
       ],
       "regional": [
-        { "id": "global_toronto", "name": "Global News Toronto", "url": "https://globalnews.ca/toronto/feed/" }
+        {
+          "id": "global_ontario",
+          "name": "Global News Ontario",
+          "url": "https://globalnews.ca/ontario/feed/"
+        }
       ],
       "national": [
-        { "id": "cbc_top", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories" }
+        {
+          "id": "globalnews",
+          "name": "Global News",
+          "url": "https://globalnews.ca/feed/"
+        }
       ]
     },
     "vancouver": {
-      "name": "Vancouver", "country": "Canada", "language": "en",
+      "name": "Vancouver",
+      "country": "Canada",
+      "language": "en",
       "local": [
-        { "id": "cbc_bc", "name": "CBC British Columbia", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-britishcolumbia" },
-        { "id": "vancouver_sun", "name": "Vancouver Sun", "url": "https://vancouversun.com/feed/" }
+        {
+          "id": "vancouver_sun",
+          "name": "Vancouver Sun",
+          "url": "https://vancouversun.com/feed/"
+        },
+        {
+          "id": "the_tyee",
+          "name": "The Tyee",
+          "url": "https://thetyee.ca/rss2.xml"
+        },
+        {
+          "id": "global_bc",
+          "name": "Global News BC",
+          "url": "https://globalnews.ca/bc/feed/"
+        }
       ],
       "regional": [
-        { "id": "the_tyee", "name": "The Tyee", "url": "https://thetyee.ca/rss2.xml" }
+        {
+          "id": "global_bc_r",
+          "name": "Global News BC",
+          "url": "https://globalnews.ca/bc/feed/"
+        }
       ],
       "national": [
-        { "id": "cbc_top", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories" }
+        {
+          "id": "globalnews",
+          "name": "Global News",
+          "url": "https://globalnews.ca/feed/"
+        }
       ]
     },
     "eugene": {
-      "name": "Eugene", "country": "United States", "language": "en",
+      "name": "Eugene",
+      "country": "United States",
+      "language": "en",
       "local": [
-        { "id": "klcc", "name": "KLCC (Eugene)", "url": "https://www.klcc.org/rss.xml" },
-        { "id": "eugene_weekly", "name": "Eugene Weekly", "url": "https://eugeneweekly.com/feed/" }
+        {
+          "id": "eugene_weekly",
+          "name": "Eugene Weekly",
+          "url": "https://eugeneweekly.com/feed/"
+        }
       ],
       "regional": [
-        { "id": "opb", "name": "Oregon Public Broadcasting", "url": "https://www.opb.org/news/feed/" }
+        {
+          "id": "occ",
+          "name": "Oregon Capital Chronicle",
+          "url": "https://oregoncapitalchronicle.com/feed/"
+        }
       ],
       "national": [
-        { "id": "npr_news", "name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml" }
+        {
+          "id": "npr_news",
+          "name": "NPR News",
+          "url": "https://feeds.npr.org/1001/rss.xml"
+        }
       ]
     },
     "london": {
-      "name": "London", "country": "United Kingdom", "language": "en",
+      "name": "London",
+      "country": "United Kingdom",
+      "language": "en",
       "local": [
-        { "id": "bbc_london", "name": "BBC London", "url": "https://feeds.bbci.co.uk/news/england/london/rss.xml" },
-        { "id": "guardian_london", "name": "The Guardian (London)", "url": "https://www.theguardian.com/uk/london/rss" }
+        {
+          "id": "bbc_london",
+          "name": "BBC London",
+          "url": "https://feeds.bbci.co.uk/news/england/london/rss.xml"
+        },
+        {
+          "id": "guardian_london",
+          "name": "The Guardian (London)",
+          "url": "https://www.theguardian.com/uk/london/rss"
+        }
       ],
       "regional": [
-        { "id": "bbc_england", "name": "BBC England", "url": "https://feeds.bbci.co.uk/news/england/rss.xml" }
+        {
+          "id": "bbc_england",
+          "name": "BBC England",
+          "url": "https://feeds.bbci.co.uk/news/england/rss.xml"
+        }
       ],
       "national": [
-        { "id": "bbc_uk", "name": "BBC UK", "url": "https://feeds.bbci.co.uk/news/uk/rss.xml" }
+        {
+          "id": "bbc_uk",
+          "name": "BBC UK",
+          "url": "https://feeds.bbci.co.uk/news/uk/rss.xml"
+        }
       ]
     },
     "paris": {
-      "name": "Paris", "country": "France", "language": "fr",
+      "name": "Paris",
+      "country": "France",
+      "language": "fr",
       "local": [
-        { "id": "leparisien_paris", "name": "Le Parisien (Paris)", "url": "https://www.leparisien.fr/paris-75/rss.xml" },
-        { "id": "francebleu_paris", "name": "France Bleu Paris", "url": "https://www.francebleu.fr/rss/paris/rss.xml" }
+        {
+          "id": "leparisien_paris",
+          "name": "Le Parisien (Paris)",
+          "url": "https://www.leparisien.fr/paris-75/rss.xml"
+        },
+        {
+          "id": "francebleu_paris",
+          "name": "France Bleu Paris",
+          "url": "https://www.francebleu.fr/rss/paris/rss.xml"
+        }
       ],
       "regional": [
-        { "id": "francebleu_idf", "name": "France Bleu Île-de-France", "url": "https://www.francebleu.fr/rss/107-1/rss.xml" }
+        {
+          "id": "francebleu_idf",
+          "name": "France Bleu Île-de-France",
+          "url": "https://www.francebleu.fr/rss/107-1/rss.xml"
+        }
       ],
       "national": [
-        { "id": "franceinfo", "name": "France Info", "url": "https://www.francetvinfo.fr/titres.rss" },
-        { "id": "lemonde_une", "name": "Le Monde (Une)", "url": "https://www.lemonde.fr/rss/une.xml" }
+        {
+          "id": "franceinfo",
+          "name": "France Info",
+          "url": "https://www.francetvinfo.fr/titres.rss"
+        },
+        {
+          "id": "lemonde_une",
+          "name": "Le Monde (Une)",
+          "url": "https://www.lemonde.fr/rss/une.xml"
+        }
       ]
     }
   },
   "international": [
-    { "id": "new_humanitarian", "name": "The New Humanitarian", "url": "https://www.thenewhumanitarian.org/rss.xml" },
-    { "id": "bbc_world", "name": "BBC World Service", "url": "https://feeds.bbci.co.uk/news/world/rss.xml" },
-    { "id": "mongabay", "name": "Mongabay Environmental News", "url": "https://news.mongabay.com/feed/" },
-    { "id": "guardian_world", "name": "The Guardian (World)", "url": "https://www.theguardian.com/world/rss" }
+    {
+      "id": "new_humanitarian",
+      "name": "The New Humanitarian",
+      "url": "https://www.thenewhumanitarian.org/rss.xml"
+    },
+    {
+      "id": "bbc_world",
+      "name": "BBC World Service",
+      "url": "https://feeds.bbci.co.uk/news/world/rss.xml"
+    },
+    {
+      "id": "mongabay",
+      "name": "Mongabay Environmental News",
+      "url": "https://news.mongabay.com/feed/"
+    },
+    {
+      "id": "guardian_world",
+      "name": "The Guardian (World)",
+      "url": "https://www.theguardian.com/world/rss"
+    }
   ],
   "beats": [
-    { "id": "kff_health", "name": "KFF Health News", "url": "https://kffhealthnews.org/feed/", "beat": "health" },
-    { "id": "arstechnica", "name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "beat": "technology" },
-    { "id": "npr_business", "name": "NPR Business", "url": "https://feeds.npr.org/1006/rss.xml", "beat": "business" },
-    { "id": "propublica", "name": "ProPublica", "url": "https://www.propublica.org/feed/", "beat": "government" }
+    {
+      "id": "kff_health",
+      "name": "KFF Health News",
+      "url": "https://kffhealthnews.org/feed/",
+      "beat": "health"
+    },
+    {
+      "id": "arstechnica",
+      "name": "Ars Technica",
+      "url": "https://feeds.arstechnica.com/arstechnica/index",
+      "beat": "technology"
+    },
+    {
+      "id": "npr_business",
+      "name": "NPR Business",
+      "url": "https://feeds.npr.org/1006/rss.xml",
+      "beat": "business"
+    },
+    {
+      "id": "propublica",
+      "name": "ProPublica",
+      "url": "https://www.propublica.org/feed/",
+      "beat": "government"
+    }
   ]
 }
