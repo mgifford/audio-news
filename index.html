@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A solutions-oriented, accessibility-first audio news reader. Static, offline-first, and zero-cost.">
+  <title>Solutions Audio News Reader</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="app-header">
+    <div class="logo-area">
+      <h1><span aria-hidden="true">📻</span> Solutions News Deck</h1>
+      <span class="badge">Phase 1 static prototype</span>
+    </div>
+    <nav class="theme-controls" aria-label="Display and deck settings">
+      <button id="themeToggle" type="button" aria-pressed="false">
+        <span aria-hidden="true">🌓</span> High-contrast theme
+      </button>
+      <button id="settingsToggle" type="button" aria-expanded="false" aria-controls="settingsDrawer">
+        <span aria-hidden="true">⚙️</span> Deck settings
+      </button>
+    </nav>
+  </header>
+
+  <main class="container" id="main">
+    <!-- Settings Drawer -->
+    <section id="settingsDrawer" class="card drawer" aria-labelledby="settingsHeading" tabindex="-1" hidden>
+      <h2 id="settingsHeading">Geographic story mix</h2>
+      <p class="subtitle">Adjust how many stories from each scope build your audio bulletin.</p>
+
+      <div class="slider-group">
+        <label for="sliderLocal">Local (Ottawa / civic): <span id="valLocal">1</span></label>
+        <input type="range" id="sliderLocal" min="0" max="3" value="1" aria-describedby="settingsHeading">
+      </div>
+
+      <div class="slider-group">
+        <label for="sliderRegional">Regional (Ontario / provincial): <span id="valRegional">1</span></label>
+        <input type="range" id="sliderRegional" min="0" max="3" value="1">
+      </div>
+
+      <div class="slider-group">
+        <label for="sliderNational">National (policy / Canada / US): <span id="valNational">2</span></label>
+        <input type="range" id="sliderNational" min="0" max="4" value="2">
+      </div>
+
+      <div class="slider-group">
+        <label for="sliderWorld">International (global affairs): <span id="valWorld">1</span></label>
+        <input type="range" id="sliderWorld" min="0" max="4" value="1">
+      </div>
+
+      <button id="saveSettingsBtn" type="button" class="btn-primary">Save &amp; apply deck ratios</button>
+    </section>
+
+    <!-- Controls & Player Deck -->
+    <section class="card player-card" aria-labelledby="deckHeading">
+      <h2 id="deckHeading" class="visually-hidden">Playback controls</h2>
+      <div class="deck-actions">
+        <button id="fetchDeckBtn" type="button" class="btn-action">
+          <span aria-hidden="true">🔄</span> Fetch fresh deck
+        </button>
+        <button id="playAudioBtn" type="button" class="btn-action btn-play" disabled>
+          <span aria-hidden="true">▶️</span> Read aloud
+        </button>
+        <button id="stopAudioBtn" type="button" class="btn-action btn-stop" disabled>
+          <span aria-hidden="true">⏹️</span> Stop
+        </button>
+      </div>
+      <p id="statusMessage" class="status-indicator" role="status">Loading feed registry…</p>
+      <p class="proxy-note">
+        Feeds are fetched through a third-party CORS proxy so this static page can read
+        cross-origin RSS. That proxy can see which feeds load. Source links always point
+        straight to the original publisher.
+      </p>
+    </section>
+
+    <!-- News Items Queue / Source Lineage Cards -->
+    <section aria-labelledby="queueHeading">
+      <h2 id="queueHeading" class="visually-hidden">Story deck</h2>
+      <div id="newsQueue" class="news-queue"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -11,20 +11,33 @@ always paired with a readable transcript and a working source link, and the
 runtime is zero-cost by construction (a scale-to-zero server plus an in-browser
 fallback).
 
-## Status: Phase 0 (planning)
+## Status: Phase 1 (local client foundation)
 
-Phase 0 establishes the architecture, the anti-hallucination protocol, the
-editorial taxonomy, and the zero-cost execution model **before** any application
-code is written or any cloud instance is provisioned. There is no running
-service yet and no model is downloaded.
+Phase 1 delivers a static, offline-first web front-end that runs directly on
+GitHub Pages (or as the static directory inside a Hugging Face Space): a curated
+feed registry, a local state controller, direct RSS ingestion with link lineage,
+and an accessible reader shell with Web Speech API playback. There is still no
+language model and no server of ours.
 
+- [`index.html`](index.html), [`styles.css`](styles.css), [`app.js`](app.js) —
+  the accessible reader shell and the local state controller.
+- [`sources.json`](sources.json) — the editorial feed registry, organised by
+  geography with an editorial `type` per feed. Every entry is **unverified**
+  (`lastVerified: null`) until confirmed live from a browser.
+- [`PHASE1.md`](PHASE1.md) — what Phase 1 delivers, the accessibility notes, and
+  the CORS-proxy trade-off.
 - [`PHASE0.md`](PHASE0.md) — the foundation document: blueprint, candidate
-  models, SJN reframing protocol, anti-hallucination controls, accessibility and
-  sustainability requirements, and the Phase 1 validation checklist.
-- [`data/feeds.json`](data/feeds.json) — the editorial feed registry, organised
-  by geography and perspective. Every entry is **unverified** in Phase 0
-  (`lastVerified: null`); live verification is a Phase 1 task.
+  models, SJN reframing protocol, anti-hallucination controls, and the
+  validation checklist.
 - [`decisions/`](decisions/) — architecture decision records.
+
+### Run it
+
+Serve over http(s) (not `file://`):
+
+```bash
+python3 -m http.server 8000   # then open http://localhost:8000
+```
 
 ## Core principles
 

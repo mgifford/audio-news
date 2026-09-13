@@ -141,10 +141,11 @@ within these bounds is skipped and reported, never guessed.
 
 ## 5. Editorial and source taxonomy
 
-The feed registry is versioned data, kept in [`data/feeds.json`](data/feeds.json).
-It is organised by **geography** (local, regional, national, international) and
-by **perspective** (human-rights and constructive/principled lenses), to keep
-the feed set balanced and auditable rather than ad hoc.
+The feed registry is versioned data. Phase 1 finalized it as
+[`sources.json`](sources.json), organised by **geography** (local, regional,
+national, international), with each feed carrying an editorial `type` (its
+solutions, human-rights, or constructive/principled lens), to keep the feed set
+balanced and auditable rather than ad hoc.
 
 Each registry entry carries a `lastVerified` field. During Phase 0 planning the
 outbound network policy denied direct requests to every candidate feed host
@@ -205,7 +206,7 @@ meet the same bar as any accessible interface:
 
 Phase 0 records these as assumptions to be validated, not as verified facts.
 
-- [ ] **Feeds resolve and parse.** Verify each `feeds.json` entry from the target
+- [ ] **Feeds resolve and parse.** Verify each `sources.json` entry from the target
   runtime, confirm it returns valid RSS/Atom, and record `lastVerified`.
   (Blocked during Phase 0 planning by egress policy; open in Phase 1.)
 - [ ] **Feed CORS / fetch strategy.** Confirm whether feeds are fetched
