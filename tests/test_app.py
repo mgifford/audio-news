@@ -263,6 +263,28 @@ def test_empty_bulletin_rejected():
     assert client.post("/api/generate-bulletin", json={"articles": []}).status_code == 400
 
 
+def test_too_many_articles_rejected():
+    art = {"title": "t", "summary": "s", "url": "https://x", "scope": "international", "source_name": "S"}
+    r = client.post("/api/generate-bulletin", json={"articles": [art] * (m.MAX_ARTICLES + 5)})
+    assert r.status_code == 413  # bounds per-request compute before any model call
+
+
+def test_per_ip_rate_limit():
+    m._rate_hits.clear()
+    ip = "198.51.100.7"
+    assert all(m._rate_ok(ip)[0] for _ in range(m.RATE_MAX))  # first N allowed
+    allowed, retry = m._rate_ok(ip)
+    assert not allowed and retry > 0                            # then blocked with Retry-After
+    assert m._rate_ok("198.51.100.8")[0]                        # a different IP is unaffected
+
+
+def test_client_ip_prefers_forwarded_for():
+    class Req:
+        headers = {"x-forwarded-for": "203.0.113.5, 10.0.0.1"}
+        client = None
+    assert m._client_ip(Req()) == "203.0.113.5"
+
+
 def test_json_extraction_tolerates_fences_and_prose():
     assert m.extract_json_object('```json\n{"a": 1}\n```') == {"a": 1}
     assert m.extract_json_object('sure: {"x": true} done') == {"x": True}

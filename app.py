@@ -21,9 +21,11 @@ import os
 import re
 import json
 import time
+import threading
+from collections import defaultdict, deque
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -491,6 +493,40 @@ def evaluate_article(article: RawArticle) -> SoJoEvaluation:
         )
 
 
+# --- Abuse protection for the compute endpoint -------------------------------
+# The Space runs a model on a free tier, so bound per-request work, per-IP rate, and
+# global concurrency. All in-process (single container); tune via env vars.
+
+MAX_ARTICLES = int(os.getenv("MAX_ARTICLES", "15"))       # per /api/generate-bulletin call
+RATE_MAX = int(os.getenv("RATE_MAX", "20"))               # requests per IP per window
+RATE_WINDOW = int(os.getenv("RATE_WINDOW", "600"))        # seconds
+MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "2"))  # simultaneous model runs
+
+_rate_lock = threading.Lock()
+_rate_hits: dict = defaultdict(deque)
+_gen_semaphore = threading.Semaphore(MAX_CONCURRENCY)
+
+
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_ok(ip: str) -> tuple[bool, int]:
+    """Sliding-window per-IP limiter. Returns (allowed, retry_after_seconds)."""
+    now = time.time()
+    with _rate_lock:
+        dq = _rate_hits[ip]
+        while dq and now - dq[0] > RATE_WINDOW:
+            dq.popleft()
+        if len(dq) >= RATE_MAX:
+            return False, max(1, int(RATE_WINDOW - (now - dq[0])))
+        dq.append(now)
+        return True, 0
+
+
 # --- API ---------------------------------------------------------------------
 
 @app.get("/api/health")
@@ -504,10 +540,28 @@ def health_check():
 
 
 @app.post("/api/generate-bulletin")
-def generate_bulletin(req: BulletinRequest):
+def generate_bulletin(req: BulletinRequest, request: Request):
     if not req.articles:
         raise HTTPException(status_code=400, detail="No articles provided.")
+    if len(req.articles) > MAX_ARTICLES:
+        raise HTTPException(status_code=413, detail=f"Too many articles (max {MAX_ARTICLES}).")
 
+    ok, retry = _rate_ok(_client_ip(request))
+    if not ok:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again shortly.",
+                            headers={"Retry-After": str(retry)})
+
+    # Only MAX_CONCURRENCY model runs at once; shed load rather than overwhelm the Space.
+    if not _gen_semaphore.acquire(blocking=False):
+        raise HTTPException(status_code=503, detail="The engine is busy. Please retry shortly.",
+                            headers={"Retry-After": "10"})
+    try:
+        return _generate_bulletin(req)
+    finally:
+        _gen_semaphore.release()
+
+
+def _generate_bulletin(req: BulletinRequest):
     try:
         processed_stories = []
         for art in req.articles:

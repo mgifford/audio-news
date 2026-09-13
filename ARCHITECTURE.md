@@ -100,6 +100,15 @@ The browser gets stories in this order, most trustworthy first:
 The public `allorigins.win` proxy is only the step-3 fallback; the Space uses
 step 1, so a proxy outage no longer empties the deck.
 
+## Compute-endpoint protection
+
+`/api/generate-bulletin` runs the model, so it is bounded in-process (single
+container; all env-tunable): a **per-request article cap** (`MAX_ARTICLES`, 413 over
+the limit), a **per-IP sliding-window rate limit** (`RATE_MAX`/`RATE_WINDOW`, 429 with
+`Retry-After`), and a **global concurrency cap** (`MAX_CONCURRENCY`, 503 busy) so a
+flood is shed rather than allowed to overwhelm the free Space. CORS already limits
+browser origins; these guard the direct/curl path CORS cannot.
+
 ## Integrity boundaries (carried from PHASE0 / ADR 0001)
 
 - Extractive by default; the model never fabricates links (URLs travel as metadata
