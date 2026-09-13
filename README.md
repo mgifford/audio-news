@@ -3,13 +3,17 @@ title: audio-news
 emoji: 📻
 colorFrom: blue
 colorTo: indigo
-sdk: static
+sdk: docker
+app_port: 7860
 pinned: false
 license: mit
 ---
 
-<!-- The YAML block above configures the Hugging Face Space (Static SDK). It is
-     rendered as a small table on GitHub. On the Space it serves index.html. -->
+<!-- The YAML block above configures the Hugging Face Space (Docker SDK). It is
+     rendered as a small table on GitHub. On the Space, the Dockerfile builds a
+     FastAPI backend that serves both the /api endpoints and the static frontend
+     (index.html, styles.css, app.js, sources.json) from one origin. -->
+
 
 # audio-news
 
@@ -24,32 +28,46 @@ always paired with a readable transcript and a working source link, and the
 runtime is zero-cost by construction (a scale-to-zero server plus an in-browser
 fallback).
 
-## Status: Phase 1 (local client foundation)
+## Status: Phase 2 (AI broadcast engine)
 
-Phase 1 delivers a static, offline-first web front-end that runs directly on
-GitHub Pages (or as the static directory inside a Hugging Face Space): a curated
-feed registry, a local state controller, direct RSS ingestion with link lineage,
-and an accessible reader shell with Web Speech API playback. There is still no
-language model and no server of ours.
+Phase 2 adds a Python backend — FastAPI + `llama-cpp-python` running a small
+quantized local model — deployed as a **Docker** Hugging Face Space that serves
+both the API and the Phase 1 static frontend from one origin. The frontend can
+now ask the backend to classify each story against the SJN four pillars and
+synthesize a continuous radio-broadcast script; if the backend is unreachable it
+falls back to the Phase 1 local reader.
+
+Backend (`app.py`, `Dockerfile`, `requirements.txt`):
+
+- `POST /api/generate-bulletin` — evaluate a deck and return a broadcast script,
+  per-story metadata, and numeric-grounding warnings.
+- `GET /api/health`, `GET /mcp/tools` (tool manifest), and same-origin static
+  serving of the frontend assets.
+- Every inference call is deterministic (`temperature = 0.0`, `top_p = 1.0`).
+
+Frontend:
 
 - [`index.html`](index.html), [`styles.css`](styles.css), [`app.js`](app.js) —
-  the accessible reader shell and the local state controller.
-- [`sources.json`](sources.json) — the editorial feed registry, organised by
-  geography with an editorial `type` per feed. Every entry is **unverified**
-  (`lastVerified: null`) until confirmed live from a browser.
-- [`PHASE1.md`](PHASE1.md) — what Phase 1 delivers, the accessibility notes, and
-  the CORS-proxy trade-off.
-- [`PHASE0.md`](PHASE0.md) — the foundation document: blueprint, candidate
-  models, SJN reframing protocol, anti-hallucination controls, and the
-  validation checklist.
-- [`decisions/`](decisions/) — architecture decision records.
+  the accessible reader shell, now with a **Generate AI broadcast** control and a
+  visible transcript that shows exactly what is read aloud.
+- [`sources.json`](sources.json) — the editorial feed registry (feeds
+  **unverified**, `lastVerified: null`, until confirmed live).
 
-### Run it
+Docs: [`PHASE2.md`](PHASE2.md), [`PHASE1.md`](PHASE1.md), [`PHASE0.md`](PHASE0.md),
+[`decisions/`](decisions/).
 
-Serve over http(s) (not `file://`):
+### Run the frontend only (no backend)
 
 ```bash
 python3 -m http.server 8000   # then open http://localhost:8000
+```
+
+### Run the full backend locally
+
+```bash
+pip install -r requirements.txt
+export MODEL_PATH=/path/to/model.gguf   # a Qwen2.5-1.5B-Instruct GGUF, for example
+uvicorn app:app --port 7860             # open http://localhost:7860
 ```
 
 ## Core principles

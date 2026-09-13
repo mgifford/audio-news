@@ -62,7 +62,10 @@
           <span aria-hidden="true">🔄</span> Fetch fresh deck
         </button>
         <button id="playAudioBtn" type="button" class="btn-action btn-play" disabled>
-          <span aria-hidden="true">▶️</span> Read aloud
+          <span aria-hidden="true">▶️</span> Read aloud (local)
+        </button>
+        <button id="generateBroadcastBtn" type="button" class="btn-action" disabled>
+          <span aria-hidden="true">🎙️</span> Generate AI broadcast
         </button>
         <button id="stopAudioBtn" type="button" class="btn-action btn-stop" disabled>
           <span aria-hidden="true">⏹️</span> Stop
@@ -75,6 +78,9 @@
         straight to the original publisher.
       </p>
     </section>
+
+    <!-- AI broadcast transcript (Phase 2): the script shown is exactly what is read aloud. -->
+    <section id="transcript" class="card" aria-label="Broadcast transcript" hidden></section>
 
     <!-- News Items Queue / Source Lineage Cards -->
     <section aria-labelledby="queueHeading">

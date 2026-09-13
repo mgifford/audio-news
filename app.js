@@ -28,6 +28,12 @@ const APP_STATE = {
 // Phase 0 server-side pre-fetch. Overridable at runtime via localStorage 'sojo_proxy'.
 const CORS_PROXY = localStorage.getItem('sojo_proxy') || 'https://api.allorigins.win/raw?url=';
 
+// Phase 2 backend base URL. Default '' means same-origin: when this page is served
+// by the FastAPI Docker Space, /api/generate-bulletin hits the local backend. On a
+// static host with no backend the call fails and we fall back to the local reader.
+// Override for a cross-origin backend via localStorage 'sojo_api'.
+const API_BASE = localStorage.getItem('sojo_api') ?? '';
+
 const SLIDER_KEYS = [
   { ui: 'Local', state: 'local' },
   { ui: 'Regional', state: 'regional' },
@@ -107,6 +113,7 @@ function bindUIEvents() {
 
   // Audio controls.
   document.getElementById('playAudioBtn').addEventListener('click', readDeckAloud);
+  document.getElementById('generateBroadcastBtn').addEventListener('click', () => generateAIBroadcastScript(APP_STATE.currentDeck));
   document.getElementById('stopAudioBtn').addEventListener('click', stopReading);
 
   // If the tab is closed or navigated, stop any speech.
@@ -180,6 +187,7 @@ async function generateNewsDeck() {
 
   const canPlay = deck.length > 0 && 'speechSynthesis' in window;
   document.getElementById('playAudioBtn').disabled = !canPlay;
+  document.getElementById('generateBroadcastBtn').disabled = !canPlay;
 
   if (deck.length > 0) {
     updateStatus(`Built a fresh deck with ${deck.length} ${deck.length === 1 ? 'story' : 'stories'}.`);
@@ -271,28 +279,70 @@ function renderQueue(deck) {
   });
 }
 
+// Phase 1 local reader: reads exactly what is shown on the cards (transcript parity).
 function readDeckAloud() {
-  if (!('speechSynthesis' in window)) {
-    updateStatus('This browser does not support the Web Speech API. The transcript above remains available.', true);
-    return;
-  }
   if (APP_STATE.currentDeck.length === 0) return;
 
-  window.speechSynthesis.cancel();
-
-  // Read exactly what is shown on the cards (transcript parity).
   let broadcastScript = 'This is your local and global news bulletin. ';
   APP_STATE.currentDeck.forEach(item => {
     broadcastScript += `Turning to ${item.scope} news from ${item.sourceName}. ${item.title}. ${item.description} `;
-    if (!APP_STATE.history.includes(item.link)) APP_STATE.history.push(item.link);
   });
 
-  if (APP_STATE.history.length > MAX_HISTORY) {
-    APP_STATE.history = APP_STATE.history.slice(-MAX_HISTORY);
-  }
-  try { localStorage.setItem('sojo_history', JSON.stringify(APP_STATE.history)); } catch { /* ignore */ }
+  recordHistory(APP_STATE.currentDeck);
+  clearTranscript(); // the cards themselves are the transcript in local mode
+  speak(broadcastScript, 'Reading the deck aloud…');
+}
 
-  const utterance = new SpeechSynthesisUtterance(broadcastScript);
+// Phase 2 broadcast: send the deck to the backend, then read the returned script.
+async function generateAIBroadcastScript(deckItems) {
+  if (!deckItems || deckItems.length === 0) return;
+  updateStatus('Sending the deck to the AI engine for a broadcast script…');
+
+  const payload = {
+    articles: deckItems.map(item => ({
+      title: item.title,
+      summary: item.description,
+      url: item.link,
+      scope: item.scope,
+      source_name: item.sourceName
+    })),
+    anchor_name: 'Alex'
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/generate-bulletin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    const data = await res.json();
+
+    recordHistory(deckItems);
+    playScriptWithTTS(data.script, data.story_metadata || [], data.grounding_warnings || []);
+  } catch (err) {
+    console.warn('AI backend unreachable; falling back to the local reader.', err);
+    updateStatus('AI engine unavailable — reading the deck with the local reader instead.', true);
+    readDeckAloud();
+  }
+}
+
+function playScriptWithTTS(scriptText, storyMetadata, warnings) {
+  // Strip production cues like "[AUDIO: ...]" so display and speech stay identical (parity).
+  const spoken = scriptText.replace(/\[AUDIO:.*?\]/g, ' ').replace(/\s+/g, ' ').trim();
+  renderTranscript(spoken, storyMetadata, warnings);
+  speak(spoken, 'Reading the AI broadcast script…');
+}
+
+// Shared speech path for both readers: consistent state, lang, and stop handling.
+function speak(text, statusMsg) {
+  if (!('speechSynthesis' in window)) {
+    updateStatus('This browser does not support the Web Speech API. The transcript remains available.', true);
+    return;
+  }
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'en';
   utterance.rate = 1.0;
   utterance.pitch = 1.0;
@@ -300,9 +350,67 @@ function readDeckAloud() {
   utterance.onerror = onReadingStopped;
 
   document.getElementById('playAudioBtn').disabled = true;
+  document.getElementById('generateBroadcastBtn').disabled = true;
   document.getElementById('stopAudioBtn').disabled = false;
-  updateStatus('Reading the deck aloud…');
+  updateStatus(statusMsg);
   window.speechSynthesis.speak(utterance);
+}
+
+function recordHistory(items) {
+  items.forEach(item => {
+    if (item.link && !APP_STATE.history.includes(item.link)) APP_STATE.history.push(item.link);
+  });
+  if (APP_STATE.history.length > MAX_HISTORY) APP_STATE.history = APP_STATE.history.slice(-MAX_HISTORY);
+  try { localStorage.setItem('sojo_history', JSON.stringify(APP_STATE.history)); } catch { /* ignore */ }
+}
+
+function clearTranscript() {
+  const region = document.getElementById('transcript');
+  region.textContent = '';
+  region.hidden = true;
+}
+
+// Show the AI script as a visible, verifiable transcript with source links (link lineage).
+function renderTranscript(spoken, storyMetadata, warnings) {
+  const region = document.getElementById('transcript');
+  region.textContent = '';
+
+  const heading = document.createElement('h2');
+  heading.textContent = 'Broadcast transcript';
+  region.appendChild(heading);
+
+  if (warnings && warnings.length) {
+    const warn = document.createElement('p');
+    warn.className = 'status-indicator is-error';
+    warn.textContent = `Grounding check: ${warnings.join(' ')} Verify against the sources below.`;
+    region.appendChild(warn);
+  }
+
+  const body = document.createElement('p');
+  body.textContent = spoken; // textContent — the script is never inserted as HTML
+  region.appendChild(body);
+
+  if (storyMetadata && storyMetadata.length) {
+    const srcHeading = document.createElement('h3');
+    srcHeading.textContent = 'Sources in this bulletin';
+    region.appendChild(srcHeading);
+
+    const list = document.createElement('ul');
+    storyMetadata.forEach(story => {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.className = 'source-link';
+      a.href = story.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = `${story.source} — ${story.title} (opens in a new tab)`;
+      li.appendChild(a);
+      list.appendChild(li);
+    });
+    region.appendChild(list);
+  }
+
+  region.hidden = false;
 }
 
 function stopReading() {
@@ -311,8 +419,10 @@ function stopReading() {
 }
 
 function onReadingStopped() {
+  const idle = APP_STATE.currentDeck.length === 0;
   document.getElementById('stopAudioBtn').disabled = true;
-  document.getElementById('playAudioBtn').disabled = APP_STATE.currentDeck.length === 0;
+  document.getElementById('playAudioBtn').disabled = idle;
+  document.getElementById('generateBroadcastBtn').disabled = idle;
 }
 
 function updateStatus(msg, isError = false) {
