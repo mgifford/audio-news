@@ -42,7 +42,7 @@ jobs:
       - name: Backend tests (no model needed; llama-cpp is imported lazily)
         run: |
           pip install "fastapi>=0.110" "pydantic>=2.6" httpx pytest
-          pytest -q
+          python -m pytest -q   # `python -m` puts the repo root on sys.path so `import app` resolves
 
   sync:
     needs: ci
