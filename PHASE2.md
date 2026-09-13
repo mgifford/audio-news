@@ -64,7 +64,7 @@ The Space `mgifford/audio-news` moves from Static to **Docker** SDK:
 ### Model
 
 Default is **Qwen2.5-1.5B-Instruct GGUF (Q4_K_M)**, chosen partly because it is
-**Apache-2.0** — safe to redistribute under this repo's MIT licence. Llama-3.2-3B
+**Apache-2.0**, which is compatible with this repo's AGPL-3.0 licence. Llama-3.2-3B
 is more expressive but ships under Meta's community licence with use conditions;
 confirm those before switching. The model URL is a `Dockerfile` build ARG, and
 the exact filename should be confirmed against the source repo before building.

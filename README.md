@@ -1,12 +1,12 @@
 ---
-title: audio-news
+title: Audio News Reader
 emoji: 📻
 colorFrom: blue
-colorTo: indigo
+colorTo: green
 sdk: docker
 app_port: 7860
 pinned: false
-license: mit
+license: agpl-3.0
 ---
 
 <!-- The YAML block above configures the Hugging Face Space (Docker SDK). It is
@@ -86,4 +86,8 @@ uvicorn app:app --port 7860             # open http://localhost:7860
 
 ## Licence
 
-MIT. See [`LICENSE`](LICENSE).
+**AGPL-3.0-or-later.** See [`LICENSE`](LICENSE). Because this project is meant to
+run as a hosted web service, the AGPL's network-use clause (section 13) applies:
+anyone who runs a modified version and lets others use it over a network must
+offer those users its source. The running app links back to this repository to
+satisfy that.

@@ -40,7 +40,7 @@ to failure. Reproducible sampling allows a script for an unchanged entry to be
 cached rather than regenerated.
 
 The trade-off is an operational surface (a Space, a sync workflow, and model
-licence obligations). Model licence compatibility with this project's MIT licence
+licence obligations). Model licence compatibility with this project's AGPL-3.0 licence
 must be confirmed before any weights are bundled or auto-downloaded, and every
 anti-hallucination control must be demonstrated against a labelled sample in
 Phase 1 before the reader speaks to a real listener. Accessibility is a

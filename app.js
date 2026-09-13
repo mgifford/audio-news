@@ -1,5 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
- * Phase 1 Local State Controller
+ * Local State Controller
  * Manages local preferences, client-side RSS fetching, and Web Speech API playback.
  *
  * Design boundaries (see PHASE0.md):
@@ -8,6 +9,10 @@
  * - Transcript parity: the text read aloud is exactly the text shown on the card.
  * - No unsafe rendering: feed content is inserted with textContent, never innerHTML.
  */
+
+// True only in Microsoft Edge, where the `read:` protocol opens Immersive Reader.
+// In other browsers that protocol does nothing, so the affordance is Edge-only.
+const IS_EDGE = /\bEdg\//.test(navigator.userAgent);
 
 // The visible summary and the spoken summary use the same capped string, so audio matches transcript.
 const MAX_DESC = 320;
@@ -116,8 +121,53 @@ function bindUIEvents() {
   document.getElementById('generateBroadcastBtn').addEventListener('click', () => generateAIBroadcastScript(APP_STATE.currentDeck));
   document.getElementById('stopAudioBtn').addEventListener('click', stopReading);
 
+  // Voice + speed controls (apply to both the local reader and the AI broadcast).
+  const speed = document.getElementById('speedRate');
+  const storedRate = parseFloat(localStorage.getItem('sojo_rate'));
+  if (storedRate >= 0.5 && storedRate <= 2) speed.value = String(storedRate);
+  document.getElementById('speedVal').textContent = `${parseFloat(speed.value).toFixed(2)}×`;
+  speed.addEventListener('input', () => {
+    document.getElementById('speedVal').textContent = `${parseFloat(speed.value).toFixed(2)}×`;
+    try { localStorage.setItem('sojo_rate', speed.value); } catch { /* ignore */ }
+  });
+  document.getElementById('voiceSelect').addEventListener('change', (e) => {
+    const v = window.speechSynthesis.getVoices()[e.target.value];
+    if (v) { try { localStorage.setItem('sojo_voice', v.name); } catch { /* ignore */ } }
+  });
+
+  if ('speechSynthesis' in window) {
+    populateVoiceList();
+    window.speechSynthesis.onvoiceschanged = populateVoiceList; // voices load asynchronously
+  }
+
   // If the tab is closed or navigated, stop any speech.
   window.addEventListener('beforeunload', () => window.speechSynthesis && window.speechSynthesis.cancel());
+}
+
+// Fill the voice dropdown from the system/browser voices. Restores a saved choice,
+// otherwise prefers a high-quality Edge "Natural"/"Online" voice when present.
+function populateVoiceList() {
+  const select = document.getElementById('voiceSelect');
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return;
+
+  const saved = (() => { try { return localStorage.getItem('sojo_voice'); } catch { return null; } })();
+  const current = select.value;
+  select.textContent = '';
+
+  let chosenIndex = -1;
+  voices.forEach((voice, i) => {
+    const option = document.createElement('option');
+    option.textContent = `${voice.name} (${voice.lang})`;
+    option.value = String(i);
+    select.appendChild(option);
+    if (saved && voice.name === saved) chosenIndex = i;
+    else if (chosenIndex === -1 && !saved && /Natural|Online/.test(voice.name)) chosenIndex = i;
+  });
+
+  // Keep the current selection if voices just re-fired without a saved/preferred match.
+  if (chosenIndex === -1 && current && voices[current]) chosenIndex = Number(current);
+  if (chosenIndex >= 0) select.value = String(chosenIndex);
 }
 
 function toggleDrawer() {
@@ -267,14 +317,11 @@ function renderQueue(deck) {
     const summary = document.createElement('p');
     summary.textContent = story.description;
 
-    const link = document.createElement('a');
-    link.className = 'source-link';
-    link.href = story.link;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.textContent = `Verify source at ${story.sourceName} (opens in a new tab)`;
+    const link = sourceLink(story.link, `Verify source at ${story.sourceName}`);
 
     card.append(tag, heading, summary, link);
+    const edge = edgeReaderLink(story.link);
+    if (edge) card.appendChild(edge);
     container.appendChild(card);
   });
 }
@@ -289,7 +336,7 @@ function readDeckAloud() {
   });
 
   recordHistory(APP_STATE.currentDeck);
-  clearTranscript(); // the cards themselves are the transcript in local mode
+  clearScript(); // the cards themselves are the transcript in local mode
   speak(broadcastScript, 'Reading the deck aloud…');
 }
 
@@ -330,7 +377,7 @@ async function generateAIBroadcastScript(deckItems) {
 function playScriptWithTTS(scriptText, storyMetadata, warnings) {
   // Strip production cues like "[AUDIO: ...]" so display and speech stay identical (parity).
   const spoken = scriptText.replace(/\[AUDIO:.*?\]/g, ' ').replace(/\s+/g, ' ').trim();
-  renderTranscript(spoken, storyMetadata, warnings);
+  renderScript(spoken, storyMetadata, warnings);
   speak(spoken, 'Reading the AI broadcast script…');
 }
 
@@ -343,8 +390,11 @@ function speak(text, statusMsg) {
   window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en';
-  utterance.rate = 1.0;
+  const voices = window.speechSynthesis.getVoices();
+  const chosen = voices[document.getElementById('voiceSelect').value];
+  if (chosen) utterance.voice = chosen;
+  utterance.lang = (chosen && chosen.lang) || 'en';
+  utterance.rate = parseFloat(document.getElementById('speedRate').value) || 1.0;
   utterance.pitch = 1.0;
   utterance.onend = onReadingStopped;
   utterance.onerror = onReadingStopped;
@@ -364,53 +414,76 @@ function recordHistory(items) {
   try { localStorage.setItem('sojo_history', JSON.stringify(APP_STATE.history)); } catch { /* ignore */ }
 }
 
-function clearTranscript() {
-  const region = document.getElementById('transcript');
-  region.textContent = '';
-  region.hidden = true;
+function clearScript() {
+  const card = document.getElementById('broadcastScriptCard');
+  document.getElementById('scriptTextBody').textContent = '';
+  card.hidden = true;
 }
 
-// Show the AI script as a visible, verifiable transcript with source links (link lineage).
-function renderTranscript(spoken, storyMetadata, warnings) {
-  const region = document.getElementById('transcript');
-  region.textContent = '';
-
-  const heading = document.createElement('h2');
-  heading.textContent = 'Broadcast transcript';
-  region.appendChild(heading);
+// Read-by-sight: render the generated script (and its sources) so it can be read
+// visually. The script body is not an aria-live region — a full-bulletin live
+// announcement would be verbose and collide with the TTS playback — so instead we
+// move focus to the card and announce readiness through the status region.
+function renderScript(spoken, storyMetadata, warnings) {
+  const card = document.getElementById('broadcastScriptCard');
+  const body = document.getElementById('scriptTextBody');
+  body.textContent = '';
 
   if (warnings && warnings.length) {
     const warn = document.createElement('p');
     warn.className = 'status-indicator is-error';
     warn.textContent = `Grounding check: ${warnings.join(' ')} Verify against the sources below.`;
-    region.appendChild(warn);
+    body.appendChild(warn);
   }
 
-  const body = document.createElement('p');
-  body.textContent = spoken; // textContent — the script is never inserted as HTML
-  region.appendChild(body);
+  const para = document.createElement('p');
+  para.textContent = spoken; // textContent — the script is never inserted as HTML
+  body.appendChild(para);
 
   if (storyMetadata && storyMetadata.length) {
+    const sources = document.createElement('div');
+    sources.className = 'script-sources';
+
     const srcHeading = document.createElement('h3');
     srcHeading.textContent = 'Sources in this bulletin';
-    region.appendChild(srcHeading);
+    sources.appendChild(srcHeading);
 
     const list = document.createElement('ul');
     storyMetadata.forEach(story => {
       const li = document.createElement('li');
-      const a = document.createElement('a');
-      a.className = 'source-link';
-      a.href = story.url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.textContent = `${story.source} — ${story.title} (opens in a new tab)`;
-      li.appendChild(a);
+      li.appendChild(sourceLink(story.url, `${story.source} — ${story.title}`));
+      const edge = edgeReaderLink(story.url);
+      if (edge) li.appendChild(edge);
       list.appendChild(li);
     });
-    region.appendChild(list);
+    sources.appendChild(list);
+    body.appendChild(sources);
   }
 
-  region.hidden = false;
+  card.hidden = false;
+  card.focus();
+}
+
+// A source link straight from the feed/metadata (link lineage), opening the publisher.
+function sourceLink(url, label) {
+  const a = document.createElement('a');
+  a.className = 'source-link';
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = `${label} (opens in a new tab)`;
+  return a;
+}
+
+// Edge-only: a `read:` link that opens the article in Edge's Immersive Reader.
+// Returns null in other browsers so no dead link is shown.
+function edgeReaderLink(url) {
+  if (!IS_EDGE || !url) return null;
+  const a = document.createElement('a');
+  a.className = 'source-link edge-reader-link';
+  a.href = `read:${url}`;
+  a.textContent = 'Open in Edge Immersive Reader';
+  return a;
 }
 
 function stopReading() {

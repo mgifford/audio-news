@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 audio-news Phase 2 backend — FastAPI + llama-cpp local inference.
 

@@ -71,6 +71,16 @@
           <span aria-hidden="true">⏹️</span> Stop
         </button>
       </div>
+      <div class="voice-controls">
+        <div class="voice-control">
+          <label for="speedRate">Speed: <span id="speedVal">1.0×</span></label>
+          <input type="range" id="speedRate" min="0.75" max="1.75" step="0.05" value="1.0">
+        </div>
+        <div class="voice-control">
+          <label for="voiceSelect">Voice</label>
+          <select id="voiceSelect"></select>
+        </div>
+      </div>
       <p id="statusMessage" class="status-indicator" role="status">Loading feed registry…</p>
       <p class="proxy-note">
         Feeds are fetched through a third-party CORS proxy so this static page can read
@@ -79,8 +89,13 @@
       </p>
     </section>
 
-    <!-- AI broadcast transcript (Phase 2): the script shown is exactly what is read aloud. -->
-    <section id="transcript" class="card" aria-label="Broadcast transcript" hidden></section>
+    <!-- Read-by-sight: the generated script shown here is exactly what is read aloud. -->
+    <section id="broadcastScriptCard" class="card script-card" aria-labelledby="scriptHeading" tabindex="-1" hidden>
+      <div class="script-header">
+        <h2 id="scriptHeading"><span aria-hidden="true">📻</span> Generated radio script</h2>
+      </div>
+      <div id="scriptTextBody" class="script-body"></div>
+    </section>
 
     <!-- News Items Queue / Source Lineage Cards -->
     <section aria-labelledby="queueHeading">
@@ -88,6 +103,13 @@
       <div id="newsQueue" class="news-queue"></div>
     </section>
   </main>
+
+  <footer class="app-footer">
+    <p>
+      Open source under AGPL-3.0-or-later.
+      <a href="https://github.com/mgifford/audio-news">Source code</a>.
+    </p>
+  </footer>
 
   <script src="app.js"></script>
 </body>
