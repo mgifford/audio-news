@@ -55,10 +55,20 @@ absent, never invented.
   phrases, so spoken text equals source text and URLs are never spoken. A story from a
   beat feed announces its beat ("In health news, …") instead of its geography.
 
-**Topic beats.** `sources.json` tags each feed with a `beat` (health, technology,
-business, government, environment, justice, general). The reader offers a beat picker
-alongside the geographic mix; each selected beat adds one specialized story, sourced
-only from feeds curated for that beat (deterministic — no model classifies beats).
+**Regions & language.** `sources.json` (v2) is organised as `regions` (each with
+local/regional/national feeds, a country, and a `language`) plus shared `international`
+and `beats`. The reader offers a **region picker** (Ottawa, Toronto, Vancouver,
+Eugene, London, Paris) so "local" means the viewer's place, and a **language** that
+localizes the deterministic bulletin's framing (`FRAMING` in `app.py`, en/fr today)
+and picks a matching TTS voice. The story text always stays in the source's language;
+only the connective framing is translated. `GET /api/regions` lists the choices.
+Full UI-chrome translation and reliable generative (AI-voice) output in other
+languages are not done yet.
+
+**Topic beats.** Each beat feed is tagged with a `beat` (health, technology,
+business, government). The reader offers a beat picker alongside the region + mix;
+each selected beat adds one specialized story, sourced only from feeds curated for
+that beat (deterministic — no model classifies beats).
 - **Generative (opt-in, labelled).** A local model rephrases into broadcast prose,
   guided by a style exemplar and the same SJN arc, using only the extracted fields.
   It is grounding-checked and shown as "AI-rephrased"; the "no invented facts"
@@ -71,9 +81,10 @@ bulletin (both modes).
 
 The browser gets stories in this order, most trustworthy first:
 
-1. **`/api/feeds`** — the backend fetches the **allowlisted** feeds in `sources.json`
-   server-side (no CORS, no third party). It only ever fetches registered feeds,
-   never a caller-supplied URL, so it is not an open proxy. Cached in memory (TTL).
+1. **`/api/feeds?region=<id>`** — the backend fetches the **allowlisted** feeds for
+   that region (local/regional/national) plus the shared international + beat feeds,
+   server-side (no CORS, no third party). It only ever fetches registered feeds, never
+   a caller-supplied URL, so it is not an open proxy. Cached in memory per region (TTL).
 2. **`feeds-cache.json`** — the scheduled pre-fetch commits this; used on a static
    host (e.g. GitHub Pages) when there is no backend, if recent enough.
 3. **Live CORS proxy** — last-resort fallback for a static host with no cache.

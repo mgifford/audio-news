@@ -1,37 +1,105 @@
 {
-  "version": "1.1.0",
+  "version": "2.0.0",
   "verification": {
     "status": "unverified",
-    "note": "Feeds have not been confirmed live from a browser. lastVerified is null until a feed is checked reachable, valid RSS/Atom, and its CORS/proxy behaviour recorded. A feed should not be treated as a guaranteed working source until it has a recorded verification date. The beat-focused feeds added in 1.1.0 are unverified candidates and degrade gracefully (itemCount 0) if unreachable.",
+    "note": "Feeds are curated candidates and have NOT been confirmed live from a browser or server. Regional and beat feeds especially are best-guess RSS URLs; a wrong URL degrades gracefully (itemCount 0). The deploy feed smoke and the scheduled pre-fetch record real HTTP status. Do not present a feed as guaranteed until it has a recorded verification date.",
     "fields": {
-      "lastVerified": "ISO 8601 date the feed was last confirmed reachable and valid, or null.",
-      "cors": "Observed browser fetch behaviour: 'direct' (CORS-allowed), 'proxy' (needs the CORS proxy), or 'unknown'.",
-      "beat": "Editorial beat for topic specialization: general, environment, justice, health, technology, business, or government."
+      "scope": "local | regional | national (within a region), or international (shared).",
+      "beat": "Editorial beat for topic specialization (shared across regions).",
+      "language": "Primary content language of the region (BCP-47 base, e.g. 'en', 'fr')."
     }
   },
-  "geography": {
-    "local": [
-      { "id": "cbc_ottawa", "name": "CBC Ottawa", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-ottawa", "type": "civic", "beat": "general", "lastVerified": null, "cors": "unknown" },
-      { "id": "ottawa_citizen", "name": "Ottawa Citizen", "url": "https://ottawacitizen.com/feed/", "type": "local_news", "beat": "general", "lastVerified": null, "cors": "unknown" }
-    ],
-    "regional": [
-      { "id": "narwhal_ontario", "name": "The Narwhal", "url": "https://thenarwhal.ca/feed/", "type": "environment_regional", "beat": "environment", "lastVerified": null, "cors": "unknown" },
-      { "id": "global_ontario", "name": "Global News Ontario", "url": "https://globalnews.ca/environment/feed/", "type": "regional_news", "beat": "environment", "lastVerified": null, "cors": "unknown" }
-    ],
-    "national": [
-      { "id": "cbc_national", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories", "type": "national_policy", "beat": "general", "lastVerified": null, "cors": "unknown" },
-      { "id": "grist_policy", "name": "Grist Climate & Policy", "url": "https://grist.org/feed/", "type": "solutions_policy", "beat": "environment", "lastVerified": null, "cors": "unknown" },
-      { "id": "marshall_project", "name": "The Marshall Project", "url": "https://www.themarshallproject.org/rss/recent.xml", "type": "justice_rights", "beat": "justice", "lastVerified": null, "cors": "unknown" },
-      { "id": "kff_health", "name": "KFF Health News", "url": "https://kffhealthnews.org/feed/", "type": "health", "beat": "health", "lastVerified": null, "cors": "unknown" },
-      { "id": "marketplace", "name": "Marketplace", "url": "https://www.marketplace.org/feed/", "type": "business", "beat": "business", "lastVerified": null, "cors": "unknown" },
-      { "id": "propublica", "name": "ProPublica", "url": "https://www.propublica.org/feed/", "type": "government_accountability", "beat": "government", "lastVerified": null, "cors": "unknown" }
-    ],
-    "international": [
-      { "id": "new_humanitarian", "name": "The New Humanitarian", "url": "https://www.thenewhumanitarian.org/rss.xml", "type": "crisis_mutual_aid", "beat": "general", "lastVerified": null, "cors": "unknown" },
-      { "id": "bbc_world", "name": "BBC World Service", "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "type": "global_news", "beat": "general", "lastVerified": null, "cors": "unknown" },
-      { "id": "mongabay", "name": "Mongabay Environmental News", "url": "https://news.mongabay.com/feed/", "type": "global_environment", "beat": "environment", "lastVerified": null, "cors": "unknown" },
-      { "id": "cs_monitor", "name": "Christian Science Monitor", "url": "https://www.csmonitor.com/rss/top.rss", "type": "constructive_global", "beat": "general", "lastVerified": null, "cors": "unknown" },
-      { "id": "arstechnica", "name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "type": "technology", "beat": "technology", "lastVerified": null, "cors": "unknown" }
-    ]
-  }
+  "regions": {
+    "ottawa": {
+      "name": "Ottawa", "country": "Canada", "language": "en",
+      "local": [
+        { "id": "cbc_ottawa", "name": "CBC Ottawa", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-ottawa" },
+        { "id": "ottawa_citizen", "name": "Ottawa Citizen", "url": "https://ottawacitizen.com/feed/" }
+      ],
+      "regional": [
+        { "id": "narwhal", "name": "The Narwhal", "url": "https://thenarwhal.ca/feed/" }
+      ],
+      "national": [
+        { "id": "cbc_top", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories" }
+      ]
+    },
+    "toronto": {
+      "name": "Toronto", "country": "Canada", "language": "en",
+      "local": [
+        { "id": "cbc_toronto", "name": "CBC Toronto", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-toronto" },
+        { "id": "toronto_star", "name": "Toronto Star", "url": "https://www.thestar.com/feed/" }
+      ],
+      "regional": [
+        { "id": "global_ontario", "name": "Global News Ontario", "url": "https://globalnews.ca/ontario/feed/" }
+      ],
+      "national": [
+        { "id": "cbc_top", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories" }
+      ]
+    },
+    "vancouver": {
+      "name": "Vancouver", "country": "Canada", "language": "en",
+      "local": [
+        { "id": "cbc_bc", "name": "CBC British Columbia", "url": "https://www.cbc.ca/webfeed/rss/rss-canada-britishcolumbia" },
+        { "id": "vancouver_sun", "name": "Vancouver Sun", "url": "https://vancouversun.com/feed/" }
+      ],
+      "regional": [
+        { "id": "the_tyee", "name": "The Tyee", "url": "https://thetyee.ca/rss2.xml" }
+      ],
+      "national": [
+        { "id": "cbc_top", "name": "CBC Top Stories", "url": "https://www.cbc.ca/webfeed/rss/rss-topstories" }
+      ]
+    },
+    "eugene": {
+      "name": "Eugene", "country": "United States", "language": "en",
+      "local": [
+        { "id": "klcc", "name": "KLCC (Eugene)", "url": "https://www.klcc.org/rss.xml" },
+        { "id": "eugene_weekly", "name": "Eugene Weekly", "url": "https://eugeneweekly.com/feed/" }
+      ],
+      "regional": [
+        { "id": "opb", "name": "Oregon Public Broadcasting", "url": "https://www.opb.org/rss/news/" }
+      ],
+      "national": [
+        { "id": "npr_news", "name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml" }
+      ]
+    },
+    "london": {
+      "name": "London", "country": "United Kingdom", "language": "en",
+      "local": [
+        { "id": "bbc_london", "name": "BBC London", "url": "https://feeds.bbci.co.uk/news/england/london/rss.xml" },
+        { "id": "guardian_london", "name": "The Guardian (London)", "url": "https://www.theguardian.com/uk/london/rss" }
+      ],
+      "regional": [
+        { "id": "bbc_england", "name": "BBC England", "url": "https://feeds.bbci.co.uk/news/england/rss.xml" }
+      ],
+      "national": [
+        { "id": "bbc_uk", "name": "BBC UK", "url": "https://feeds.bbci.co.uk/news/uk/rss.xml" }
+      ]
+    },
+    "paris": {
+      "name": "Paris", "country": "France", "language": "fr",
+      "local": [
+        { "id": "leparisien_paris", "name": "Le Parisien (Paris)", "url": "https://www.leparisien.fr/paris-75/rss.xml" },
+        { "id": "francebleu_paris", "name": "France Bleu Paris", "url": "https://www.francebleu.fr/rss/paris/rss.xml" }
+      ],
+      "regional": [
+        { "id": "francebleu_idf", "name": "France Bleu Île-de-France", "url": "https://www.francebleu.fr/rss/107-1/rss.xml" }
+      ],
+      "national": [
+        { "id": "franceinfo", "name": "France Info", "url": "https://www.francetvinfo.fr/titres.rss" },
+        { "id": "lemonde_une", "name": "Le Monde (Une)", "url": "https://www.lemonde.fr/rss/une.xml" }
+      ]
+    }
+  },
+  "international": [
+    { "id": "new_humanitarian", "name": "The New Humanitarian", "url": "https://www.thenewhumanitarian.org/rss.xml" },
+    { "id": "bbc_world", "name": "BBC World Service", "url": "https://feeds.bbci.co.uk/news/world/rss.xml" },
+    { "id": "mongabay", "name": "Mongabay Environmental News", "url": "https://news.mongabay.com/feed/" },
+    { "id": "cs_monitor", "name": "Christian Science Monitor", "url": "https://www.csmonitor.com/rss/top.rss" }
+  ],
+  "beats": [
+    { "id": "kff_health", "name": "KFF Health News", "url": "https://kffhealthnews.org/feed/", "beat": "health" },
+    { "id": "arstechnica", "name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "beat": "technology" },
+    { "id": "marketplace", "name": "Marketplace", "url": "https://www.marketplace.org/feed/", "beat": "business" },
+    { "id": "propublica", "name": "ProPublica", "url": "https://www.propublica.org/feed/", "beat": "government" }
+  ]
 }

@@ -28,11 +28,21 @@ const APP_STATE = {
   theme: localStorage.getItem('sojo_theme') || 'dark',
   ratios: readJSON('sojo_ratios', { local: 1, regional: 1, national: 2, international: 1 }),
   beats: readJSON('sojo_beats', []),
+  region: localStorage.getItem('sojo_region') || 'ottawa',
+  lang: localStorage.getItem('sojo_lang') || '',   // '' = follow the region's language
+  regions: [],
   history: readJSON('sojo_history', []),
   currentDeck: [],
   sources: null,
   cache: null
 };
+
+// Effective content language: an explicit user choice, else the region's language.
+function activeLang() {
+  if (APP_STATE.lang) return APP_STATE.lang;
+  const r = APP_STATE.regions.find(x => x.id === APP_STATE.region);
+  return (r && r.language) || (APP_STATE.cache && APP_STATE.cache.language) || 'en';
+}
 
 // Client-side CORS proxy so a static page can read cross-origin RSS.
 // A third party sees which feeds load; the privacy-preserving alternative is the
@@ -82,7 +92,39 @@ async function loadFeedRegistry() {
   } catch (err) {
     updateStatus('Could not load sources.json. Make sure the page is served over http(s), not opened as a file.', true);
   }
+  await loadRegions();
   await loadFeedCache();
+}
+
+// Populate the region picker from the backend (or the static registry as fallback).
+async function loadRegions() {
+  let regions = [];
+  try {
+    const res = await fetch(`${API_BASE}/api/regions`, { cache: 'no-store' });
+    if (res.ok) regions = (await res.json()).regions || [];
+  } catch { /* no backend: derive from sources.json */ }
+  if (!regions.length && APP_STATE.sources && APP_STATE.sources.regions) {
+    regions = Object.entries(APP_STATE.sources.regions).map(([id, r]) =>
+      ({ id, name: r.name || id, country: r.country || '', language: r.language || 'en' }));
+  }
+  APP_STATE.regions = regions;
+  if (regions.length && !regions.some(r => r.id === APP_STATE.region)) {
+    APP_STATE.region = regions[0].id;
+  }
+
+  const sel = document.getElementById('regionSelect');
+  if (sel) {
+    sel.textContent = '';
+    regions.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = r.country ? `${r.name}, ${r.country}` : r.name;
+      sel.appendChild(opt);
+    });
+    sel.value = APP_STATE.region;
+  }
+  const langSel = document.getElementById('langSelect');
+  if (langSel) langSel.value = activeLang();
 }
 
 // Prefer server-side feeds so the browser never depends on a third-party CORS proxy:
@@ -97,7 +139,7 @@ async function loadFeedCache() {
     const timer = setTimeout(() => ctrl.abort(), 20000);
     let res;
     try {
-      res = await fetch(`${API_BASE}/api/feeds`, { cache: 'no-store', signal: ctrl.signal });
+      res = await fetch(`${API_BASE}/api/feeds?region=${encodeURIComponent(APP_STATE.region)}`, { cache: 'no-store', signal: ctrl.signal });
     } finally {
       clearTimeout(timer);
     }
@@ -150,6 +192,26 @@ function bindUIEvents() {
       valDisplay.textContent = e.target.value;
       APP_STATE.ratios[state] = parseInt(e.target.value, 10);
     });
+  });
+
+  // Region: switching reloads that region's feeds and follows its language.
+  document.getElementById('regionSelect').addEventListener('change', async (e) => {
+    APP_STATE.region = e.target.value;
+    try { localStorage.setItem('sojo_region', APP_STATE.region); } catch { /* ignore */ }
+    APP_STATE.cache = null;
+    const langSel = document.getElementById('langSelect');
+    if (!APP_STATE.lang && langSel) langSel.value = activeLang();
+    updateStatus('Loading feeds for the new region…');
+    await loadFeedCache();
+    populateVoiceList();
+    updateStatus('Region updated. Select “Fetch fresh deck”.');
+  });
+
+  // Language: content-framing + preferred TTS voice.
+  document.getElementById('langSelect').addEventListener('change', (e) => {
+    APP_STATE.lang = e.target.value;
+    try { localStorage.setItem('sojo_lang', APP_STATE.lang); } catch { /* ignore */ }
+    populateVoiceList();
   });
 
   // Topic beats: restore checkboxes from state.
@@ -210,17 +272,23 @@ function populateVoiceList() {
   const current = select.value;
   select.textContent = '';
 
+  const lang = activeLang();
+  const inLang = (v) => (v.lang || '').toLowerCase().startsWith(lang.toLowerCase());
   let chosenIndex = -1;
+  let firstInLang = -1;
   voices.forEach((voice, i) => {
     const option = document.createElement('option');
     option.textContent = `${voice.name} (${voice.lang})`;
     option.value = String(i);
     select.appendChild(option);
+    if (firstInLang === -1 && inLang(voice)) firstInLang = i;
     if (saved && voice.name === saved) chosenIndex = i;
-    else if (chosenIndex === -1 && !saved && /Natural|Online/.test(voice.name)) chosenIndex = i;
+    // Prefer a high-quality voice in the active language.
+    else if (chosenIndex === -1 && !saved && inLang(voice) && /Natural|Online/.test(voice.name)) chosenIndex = i;
   });
 
-  // Keep the current selection if voices just re-fired without a saved/preferred match.
+  // Fall back to any voice in the active language, then the prior/first choice.
+  if (chosenIndex === -1) chosenIndex = firstInLang;
   if (chosenIndex === -1 && current && voices[current]) chosenIndex = Number(current);
   if (chosenIndex >= 0) select.value = String(chosenIndex);
 }
@@ -293,7 +361,7 @@ async function generateNewsDeck() {
     if (!fresh.length) continue;
     const item = fresh[0];
     deck.push({
-      scope: source.scope || 'national',
+      scope: 'national',   // beats have no geographic scope; the beat drives the transition
       beat,
       sourceName: source.name,
       title: item.title,
@@ -318,42 +386,38 @@ async function generateNewsDeck() {
   }
 }
 
-// Pick a random source for a scope and return its stories. Prefer the fresh
-// server-side cache (no proxy); otherwise fetch live through the CORS proxy.
+// The feed sets for the current region: the server cache when present, else built
+// from the static registry for the selected region (live-proxy fallback).
+function currentGeography() {
+  if (APP_STATE.cache && APP_STATE.cache.geography) return APP_STATE.cache.geography;
+  const s = APP_STATE.sources;
+  if (!s || !s.regions) return null;
+  const r = s.regions[APP_STATE.region] || {};
+  return {
+    local: r.local || [], regional: r.regional || [], national: r.national || [],
+    international: s.international || [], beats: s.beats || []
+  };
+}
+
+async function _pickFrom(list) {
+  if (!list || !list.length) return { source: null, items: [] };
+  const withItems = list.filter(s => s.items && s.items.length);
+  const pool = withItems.length ? withItems : list;
+  const source = pool[Math.floor(Math.random() * pool.length)];
+  return { source, items: source.items || await fetchRSSFeed(source) };
+}
+
+// Pick a random source for a geographic scope in the current region.
 async function pickScopeStories(geo) {
-  const cached = APP_STATE.cache && APP_STATE.cache.geography && APP_STATE.cache.geography[geo];
-  if (cached && cached.length) {
-    const withItems = cached.filter(s => s.items && s.items.length);
-    const pool = withItems.length ? withItems : cached;
-    const source = pool[Math.floor(Math.random() * pool.length)];
-    return { source, items: source.items || [] };
-  }
-
-  const available = APP_STATE.sources.geography[geo];
-  if (!available || available.length === 0) return { source: null, items: [] };
-  const source = available[Math.floor(Math.random() * available.length)];
-  return { source, items: await fetchRSSFeed(source) };
+  const g = currentGeography();
+  return _pickFrom(g && g[geo]);
 }
 
-// Flatten every feed in the registry/cache into one list (each with its scope + beat).
-function allSources() {
-  const geo = (APP_STATE.cache && APP_STATE.cache.geography) || (APP_STATE.sources && APP_STATE.sources.geography) || {};
-  return Object.entries(geo).flatMap(([scope, feeds]) =>
-    feeds.map(f => ({ ...f, scope: f.scope || scope })));
-}
-
-// Pick a source for a topic beat (across all geographies) and return its stories.
+// Pick a source for a topic beat (shared across regions).
 async function pickBeatStories(beat) {
-  const matches = allSources().filter(s => s.beat === beat);
-  if (!matches.length) return { source: null, items: [] };
-
-  const withItems = matches.filter(s => s.items && s.items.length);
-  if (withItems.length) {
-    const source = withItems[Math.floor(Math.random() * withItems.length)];
-    return { source, items: source.items };
-  }
-  const source = matches[Math.floor(Math.random() * matches.length)];
-  return { source, items: await fetchRSSFeed(source) };
+  const g = currentGeography();
+  const beats = (g && g.beats) || [];
+  return _pickFrom(beats.filter(s => s.beat === beat));
 }
 
 function extractLink(item) {
@@ -467,7 +531,8 @@ async function generateAIBroadcastScript(deckItems) {
       beat: item.beat || null
     })),
     anchor_name: 'Alex',
-    mode: generative ? 'generative' : 'deterministic'
+    mode: generative ? 'generative' : 'deterministic',
+    lang: activeLang()
   };
 
   try {
@@ -507,7 +572,7 @@ function speak(text, statusMsg) {
   const voices = window.speechSynthesis.getVoices();
   const chosen = voices[document.getElementById('voiceSelect').value];
   if (chosen) utterance.voice = chosen;
-  utterance.lang = (chosen && chosen.lang) || 'en';
+  utterance.lang = (chosen && chosen.lang) || activeLang();
   utterance.rate = parseFloat(document.getElementById('speedRate').value) || 1.0;
   utterance.pitch = 1.0;
   utterance.onend = onReadingStopped;

@@ -28,11 +28,24 @@
   <main class="container" id="main">
     <!-- Settings Drawer -->
     <section id="settingsDrawer" class="card drawer" aria-labelledby="settingsHeading" tabindex="-1" hidden>
-      <h2 id="settingsHeading">Geographic story mix</h2>
-      <p class="subtitle">Adjust how many stories from each scope build your audio bulletin.</p>
+      <h2 id="settingsHeading">Region, language &amp; story mix</h2>
+      <p class="subtitle">Choose where your local news comes from, the language, and how many stories from each scope build your bulletin.</p>
 
       <div class="slider-group">
-        <label for="sliderLocal">Local (Ottawa / civic): <span id="valLocal">1</span></label>
+        <label for="regionSelect">Region (your local news)</label>
+        <select id="regionSelect"></select>
+      </div>
+
+      <div class="slider-group">
+        <label for="langSelect">Language</label>
+        <select id="langSelect">
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+        </select>
+      </div>
+
+      <div class="slider-group">
+        <label for="sliderLocal">Local (civic): <span id="valLocal">1</span></label>
         <input type="range" id="sliderLocal" min="0" max="3" value="1" aria-describedby="settingsHeading">
       </div>
 

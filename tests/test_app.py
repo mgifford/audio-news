@@ -30,17 +30,42 @@ def test_feedfetch_build_cache_offline():
     assert feedfetch.total_items(cache) == 1
 
 
+def _registry_urls():
+    reg = json_sources()
+    urls = set()
+    for region in reg.get("regions", {}).values():
+        for scope in ("local", "regional", "national"):
+            urls |= {f["url"] for f in region.get(scope, [])}
+    urls |= {f["url"] for f in reg.get("international", [])}
+    urls |= {f["url"] for f in reg.get("beats", [])}
+    return urls
+
+
 def test_api_feeds_only_reads_registry(monkeypatch):
     # /api/feeds must never fetch a caller-supplied URL — only sources.json feeds.
     seen = []
     monkeypatch.setattr(feedfetch, "fetch", lambda url: (seen.append(url), (200, _RSS))[1])
-    m._feeds_cache["data"] = None  # bypass TTL cache
-    r = client.get("/api/feeds")
+    m._feeds_cache.clear()  # bypass TTL cache
+    r = client.get("/api/feeds?region=paris")
     assert r.status_code == 200
-    assert "geography" in r.json()
-    # every fetched URL came from the registry, not from the request
-    registry = {f["url"] for feeds in json_sources()["geography"].values() for f in feeds}
-    assert seen and all(u in registry for u in seen)
+    body = r.json()
+    assert "geography" in body and body["region"] == "paris" and body["language"] == "fr"
+    assert seen and all(u in _registry_urls() for u in seen)
+
+
+def test_api_regions_lists_expected_regions():
+    ids = {r["id"] for r in client.get("/api/regions").json()["regions"]}
+    assert {"ottawa", "toronto", "vancouver", "eugene", "london", "paris"} <= ids
+
+
+def test_french_framing():
+    stories = [{"scope": "local", "source": "Le Parisien", "title": "Une nouvelle piste cyclable",
+                "summary": "La ville agrandit son réseau.", "is_solutions_story": True,
+                "response": "une piste protégée", "evidence": "", "limitation": ""}]
+    script = m.assemble_script(stories, "Alex", lang="fr")
+    assert "Voici votre bulletin" in script and "À la une :" in script
+    assert "La réponse : Une piste protégée." in script
+    assert "Voilà votre bulletin." in script
 
 
 def json_sources():

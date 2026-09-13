@@ -115,6 +115,7 @@ class BulletinRequest(BaseModel):
     # so spoken text == extracted text (no added hallucination surface). "generative":
     # a local model rephrases into broadcast prose (clearly labelled, grounding-checked).
     mode: Optional[str] = "deterministic"
+    lang: Optional[str] = "en"  # framing language (must match the source language)
 
 
 class SoJoEvaluation(BaseModel):
@@ -175,6 +176,7 @@ RADIO_STYLE_EXAMPLE = (
 RADIO_SCRIPT_PROMPT = """<|im_start|>system
 You are a lead editor at a global public news service like the BBC World Service.
 Write a continuous, spoken radio news bulletin from ONLY the provided JSON stories.
+{lang_line}
 
 Structure:
 1. Open with "Top stories:" naming each story in one clause.
@@ -265,27 +267,55 @@ def apply_load_cap(stories: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, omitted
 
 
-_SCOPE_TRANSITIONS = {
-    "local": "In local news",
-    "regional": "Turning to regional news",
-    "national": "Across the country",
-    "international": "Internationally",
-}
-# A story from a beat feed announces its beat instead of its geography, so the
-# specialization is audible ("In health news, from ...").
-_BEAT_TRANSITIONS = {
-    "health": "In health news",
-    "technology": "In technology",
-    "business": "In business and the economy",
-    "government": "In government and policy",
-    "environment": "On the environment",
-    "justice": "In justice and rights",
-}
 _SCOPE_WEIGHT = {"international": 3, "national": 3, "regional": 2, "local": 1}
 
 # BBC-style summary target: ~2 minutes at ~150 wpm ≈ 300 words. Soft cap so a large
 # deck doesn't run long; every story is still named in the headline block.
 TARGET_WORDS = 320
+
+# Localized framing for the deterministic bulletin. Only the connective tissue is
+# translated — the story text stays exactly as extracted from the (language-matched)
+# source. Add a locale here to support another language's regions.
+FRAMING = {
+    "en": {
+        "intro": "This is your news bulletin, with {anchor}.",
+        "top": "Our top stories: {headlines}.",
+        "details": "Now, the details.",
+        "lead": "{transition}, from {source}: ",
+        "also": "Also from {source}: ",
+        "response": "The response: ",
+        "evidence": "The evidence so far: ",
+        "limitation": "The limitation: ",
+        "help": "If you would like to help: ",
+        "resource": "A resource link is in your player deck.",
+        "and_finally": "And finally, some better news, from {source}: ",
+        "outro": "That is your briefing.",
+        "scope": {"local": "In local news", "regional": "Turning to regional news",
+                  "national": "Across the country", "international": "Internationally"},
+        "beat": {"health": "In health news", "technology": "In technology",
+                 "business": "In business and the economy", "government": "In government and policy",
+                 "environment": "On the environment", "justice": "In justice and rights"},
+    },
+    "fr": {
+        "intro": "Voici votre bulletin d'information, avec {anchor}.",
+        "top": "À la une : {headlines}.",
+        "details": "Les détails, maintenant.",
+        "lead": "{transition}, de {source} : ",
+        "also": "Également, de {source} : ",
+        "response": "La réponse : ",
+        "evidence": "Les résultats jusqu'ici : ",
+        "limitation": "La limite : ",
+        "help": "Pour aider : ",
+        "resource": "Un lien vers des ressources se trouve dans votre lecteur.",
+        "and_finally": "Et pour finir, une meilleure nouvelle, de {source} : ",
+        "outro": "Voilà votre bulletin.",
+        "scope": {"local": "Dans l'actualité locale", "regional": "Au niveau régional",
+                  "national": "À l'échelle nationale", "international": "À l'international"},
+        "beat": {"health": "Santé", "technology": "Technologie",
+                 "business": "Économie", "government": "Politique et gouvernement",
+                 "environment": "Environnement", "justice": "Justice et droits"},
+    },
+}
 
 
 def _sent(text: str) -> str:
@@ -307,40 +337,41 @@ def _story_order(stories: list[dict]) -> list[dict]:
     )
 
 
-def _transition(story: dict) -> str:
+def _transition(story: dict, F: dict) -> str:
     beat = story.get("beat")
-    if beat and beat in _BEAT_TRANSITIONS:
-        return _BEAT_TRANSITIONS[beat]
-    return _SCOPE_TRANSITIONS.get(story.get("scope"), "Next")
+    if beat and beat in F["beat"]:
+        return F["beat"][beat]
+    return F["scope"].get(story.get("scope"), F["scope"]["national"])
 
 
-def _story_body(s: dict) -> list[str]:
+def _story_body(s: dict, F: dict) -> list[str]:
     """The SJN arc for one story, as sentences (extractive only)."""
     out = []
     pillars = [s.get("response"), s.get("evidence"), s.get("limitation")]
     if s.get("is_solutions_story") and any(pillars):
         if s.get("response"):
-            out.append(f"The response: {_sent(s['response'])}")
+            out.append(F["response"] + _sent(s["response"]))
         if s.get("evidence"):
-            out.append(f"The evidence so far: {_sent(s['evidence'])}")
+            out.append(F["evidence"] + _sent(s["evidence"]))
         if s.get("limitation"):
-            out.append(f"The limitation: {_sent(s['limitation'])}")
+            out.append(F["limitation"] + _sent(s["limitation"]))
     elif s.get("is_crisis"):
         out.append(_sent(s.get("root_cause") or s.get("summary") or ""))
         if s.get("action_anchor"):
-            out.append(f"If you would like to help: {_sent(s['action_anchor'])} A resource link is in your player deck.")
+            out.append(F["help"] + _sent(s["action_anchor"]) + " " + F["resource"])
     elif s.get("summary"):
         out.append(_sent(s["summary"]))
     return [p for p in out if p]
 
 
-def assemble_script(stories: list[dict], anchor_name: str = "Alex") -> str:
+def assemble_script(stories: list[dict], anchor_name: str = "Alex", lang: str = "en") -> str:
     """Build the spoken bulletin from the feeds' own words — no model, so the spoken
     text equals the extracted text (nothing invented). BBC-summary shape: a top-stories
     headline block, breaking/top first, each story in its SJN arc, a soft ~300-word cap,
-    and an 'And finally' solutions closer. URLs are never spoken."""
+    and an 'And finally' solutions closer. Framing is localized; URLs are never spoken."""
     if not stories:
         return ""
+    F = FRAMING.get(lang, FRAMING["en"])
     ordered = _story_order(stories)
 
     # Hold back one solutions story to close on ("And finally"), BBC-style, when the
@@ -353,20 +384,24 @@ def assemble_script(stories: list[dict], anchor_name: str = "Alex") -> str:
                 break
     body_stories = [s for s in ordered if s is not closer]
 
-    parts = [f"This is your news bulletin, with {anchor_name}."]
     headlines = "; ".join(s["title"].rstrip(".") for s in ordered)
-    parts.append(f"Our top stories: {headlines}.")
-    parts.append("Now, the details.")
+    parts = [
+        F["intro"].format(anchor=anchor_name),
+        F["top"].format(headlines=headlines),
+        F["details"],
+    ]
 
     words = sum(len(p.split()) for p in parts)
     reserve = 45 if closer else 0  # leave room for the closer under the word target
     last_key = None
     for s in body_stories:
         key = s.get("beat") or s.get("scope")
-        lead = f"{_transition(s)}, from {s['source']}: {_sent(s['title'])}" if key != last_key \
-            else f"Also from {s['source']}: {_sent(s['title'])}"
+        if key != last_key:
+            lead = F["lead"].format(transition=_transition(s, F), source=s["source"]) + _sent(s["title"])
+        else:
+            lead = F["also"].format(source=s["source"]) + _sent(s["title"])
         last_key = key
-        chunk = [lead, *_story_body(s)]
+        chunk = [lead, *_story_body(s, F)]
         chunk_words = sum(len(p.split()) for p in chunk)
         if words + chunk_words > TARGET_WORDS - reserve and words > 40:
             break  # over the soft target; remaining stories stay in the headline block
@@ -374,10 +409,10 @@ def assemble_script(stories: list[dict], anchor_name: str = "Alex") -> str:
         words += chunk_words
 
     if closer:
-        parts.append(f"And finally, some better news, from {closer['source']}: {_sent(closer['title'])}")
-        parts.extend(_story_body(closer))
+        parts.append(F["and_finally"].format(source=closer["source"]) + _sent(closer["title"]))
+        parts.extend(_story_body(closer, F))
 
-    parts.append("That is your briefing.")
+    parts.append(F["outro"])
     return " ".join(p.strip() for p in parts if p.strip())
 
 
@@ -438,17 +473,20 @@ def generate_bulletin(req: BulletinRequest):
         # Cognitive-load cap applies to both modes.
         kept, omitted = apply_load_cap(processed_stories)
 
+        lang = req.lang or "en"
         if req.mode == "generative":
             # Optional local-model rephrase. Clearly labelled and grounding-checked;
             # spoken text is no longer guaranteed to equal the source, hence the check.
-            articles_json = json.dumps(kept, indent=2)
-            prompt = RADIO_SCRIPT_PROMPT.format(articles_json=articles_json, style_example=RADIO_STYLE_EXAMPLE)
+            lang_line = "" if lang == "en" else f"Write the entire bulletin in this language code: {lang}."
+            articles_json = json.dumps(kept, indent=2, ensure_ascii=False)
+            prompt = RADIO_SCRIPT_PROMPT.format(
+                articles_json=articles_json, style_example=RADIO_STYLE_EXAMPLE, lang_line=lang_line)
             resp = get_llm()(prompt, max_tokens=900, temperature=0.0, top_p=1.0, stop=["<|im_end|>"])
             script_text = resp["choices"][0]["text"].strip()
             warnings = ground_numbers(script_text, req.articles)
         else:
             # Default: deterministic assembly from the feeds' own words (no model call).
-            script_text = assemble_script(kept, req.anchor_name or "Alex")
+            script_text = assemble_script(kept, req.anchor_name or "Alex", lang)
             warnings = []  # spoken text == extracted text
     except RuntimeError as err:
         raise HTTPException(status_code=503, detail=str(err))
@@ -463,24 +501,59 @@ def generate_bulletin(req: BulletinRequest):
 
 
 _FEEDS_TTL = int(os.getenv("FEEDS_TTL", "600"))  # seconds; avoid re-fetching on every deck build
-_feeds_cache = {"at": 0.0, "data": None}
+_feeds_cache = {}  # region_id -> {"at": float, "data": dict}
+
+
+def _load_registry() -> dict:
+    with open(os.path.join(BASE_DIR, "sources.json"), encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _region_geography(registry: dict, region_id: str) -> tuple[dict, str]:
+    """Combine one region's local/regional/national feeds with the shared international
+    and beat feeds into the geography shape build_cache expects. Returns (geography, lang)."""
+    regions = registry.get("regions", {})
+    region = regions.get(region_id) or next(iter(regions.values()), {})
+    geography = {
+        "local": region.get("local", []),
+        "regional": region.get("regional", []),
+        "national": region.get("national", []),
+        "international": registry.get("international", []),
+        "beats": registry.get("beats", []),
+    }
+    return geography, region.get("language", "en")
+
+
+@app.get("/api/regions")
+def api_regions():
+    """The available regions (id, name, country, language) for the region picker."""
+    regions = _load_registry().get("regions", {})
+    return {"regions": [
+        {"id": rid, "name": r.get("name", rid), "country": r.get("country", ""),
+         "language": r.get("language", "en")}
+        for rid, r in regions.items()
+    ]}
 
 
 @app.get("/api/feeds")
-def api_feeds():
-    """Fetch the ALLOWLISTED feeds in sources.json server-side (no CORS proxy, no
-    third party). Only registered feeds are fetched — never a caller-supplied URL —
-    so this is not an open proxy. Cached in memory for FEEDS_TTL seconds."""
+def api_feeds(region: str = "ottawa"):
+    """Fetch one region's ALLOWLISTED feeds (plus shared international + beats)
+    server-side — no CORS proxy, no third party, never a caller-supplied URL, so not
+    an open proxy. Cached in memory per region for FEEDS_TTL seconds."""
     now = time.time()
-    if _feeds_cache["data"] is None or now - _feeds_cache["at"] > _FEEDS_TTL:
+    entry = _feeds_cache.get(region)
+    if entry is None or now - entry["at"] > _FEEDS_TTL:
         try:
-            with open(os.path.join(BASE_DIR, "sources.json"), encoding="utf-8") as fh:
-                sources = json.load(fh)
+            registry = _load_registry()
         except OSError as err:
             raise HTTPException(status_code=500, detail=f"sources.json unavailable: {err}")
-        _feeds_cache["data"] = feedfetch.build_cache(sources)
-        _feeds_cache["at"] = now
-    return _feeds_cache["data"]
+        geography, lang = _region_geography(registry, region)
+        data = feedfetch.build_cache({"geography": geography})
+        data["region"] = region
+        data["language"] = lang
+        entry = {"at": now, "data": data}
+        _feeds_cache[region] = entry
+    return entry["data"]
 
 
 @app.get("/mcp/tools")
