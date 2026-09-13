@@ -7,10 +7,12 @@ import re
 import datetime
 import urllib.request
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 
 MAX_ITEMS = 12
 MAX_DESC = 320
-TIMEOUT = 25
+TIMEOUT = 12          # per-feed cap; concurrency keeps total wall time near one feed
+MAX_WORKERS = 8       # feeds are fetched in parallel, not one after another
 USER_AGENT = "audio-news/1.0 (+https://github.com/mgifford/audio-news)"
 
 _TAG_RE = re.compile(r"<[^>]*>")
@@ -57,28 +59,33 @@ def fetch(url: str):
 
 
 def build_cache(sources: dict, fetcher=None) -> dict:
-    """Fetch every feed in the registry into a deck-ready structure. `fetcher` is
-    injectable so tests can run offline; it resolves at call time so monkeypatching
-    feedfetch.fetch also works."""
+    """Fetch every feed in the registry into a deck-ready structure. Feeds are fetched
+    concurrently so total wall time is ~one slow feed, not the sum. `fetcher` is
+    injectable and resolves at call time so monkeypatching feedfetch.fetch also works."""
     if fetcher is None:
         fetcher = fetch
     now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-    out = {"generatedAt": now, "geography": {}}
-    for geo, feeds in sources.get("geography", {}).items():
-        out["geography"][geo] = []
-        for feed in feeds:
-            status, raw = fetcher(feed["url"])
-            items = parse_feed(raw) if raw else []
-            out["geography"][geo].append({
-                "id": feed.get("id"),
-                "name": feed["name"],
-                "scope": geo,
-                "type": feed.get("type"),
-                "httpStatus": status,
-                "fetchedAt": now,
-                "itemCount": len(items),
-                "items": items,
-            })
+
+    tasks = [(geo, feed) for geo, feeds in sources.get("geography", {}).items() for feed in feeds]
+    if tasks:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            fetched = list(ex.map(lambda t: fetcher(t[1]["url"]), tasks))
+    else:
+        fetched = []
+
+    out = {"generatedAt": now, "geography": {geo: [] for geo in sources.get("geography", {})}}
+    for (geo, feed), (status, raw) in zip(tasks, fetched):
+        items = parse_feed(raw) if raw else []
+        out["geography"][geo].append({
+            "id": feed.get("id"),
+            "name": feed["name"],
+            "scope": geo,
+            "type": feed.get("type"),
+            "httpStatus": status,
+            "fetchedAt": now,
+            "itemCount": len(items),
+            "items": items,
+        })
     return out
 
 

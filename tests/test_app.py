@@ -96,6 +96,29 @@ def test_static_allowlist_hides_source():
     assert client.get("/app.py").status_code == 404
 
 
+def test_docs_and_openapi_disabled():
+    # Reduce public attack surface: no interactive docs / schema.
+    assert client.get("/openapi.json").status_code == 404
+    assert client.get("/docs").status_code == 404
+
+
+def test_build_cache_is_concurrent():
+    import time
+    import feedfetch as ff
+
+    def slow(url):
+        time.sleep(0.3)
+        return (200, _RSS)
+
+    src = {"geography": {"a": [{"id": "1", "name": "A", "url": "u"}],
+                         "b": [{"id": "2", "name": "B", "url": "u"}],
+                         "c": [{"id": "3", "name": "C", "url": "u"}]}}
+    start = time.time()
+    cache = ff.build_cache(src, fetcher=slow)
+    assert time.time() - start < 0.7  # 3x0.3s sequentially would be ~0.9s
+    assert ff.total_items(cache) == 3
+
+
 def test_empty_bulletin_rejected():
     assert client.post("/api/generate-bulletin", json={"articles": []}).status_code == 400
 

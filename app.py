@@ -30,7 +30,16 @@ from pydantic import BaseModel
 
 import feedfetch
 
-app = FastAPI(title="Solutions News Radio Engine", version="2.0.0")
+# Disable the interactive docs and OpenAPI schema: unnecessary attack surface on a
+# public endpoint (scanners probe /openapi.json, /docs). The tool manifest we do want
+# to expose lives at /mcp/tools.
+app = FastAPI(
+    title="Solutions News Radio Engine",
+    version="2.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.getenv("MODEL_PATH", "/app/models/model.gguf")

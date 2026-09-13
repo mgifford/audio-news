@@ -90,14 +90,21 @@ async function loadFeedRegistry() {
 // A miss at both leaves APP_STATE.cache null and the deck builder falls back to the
 // live proxy per scope.
 async function loadFeedCache() {
-  // 1) backend endpoint
+  // 1) backend endpoint (bounded: a cold Space builds the cache; don't hang forever)
   try {
-    const res = await fetch(`${API_BASE}/api/feeds`, { cache: 'no-store' });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    let res;
+    try {
+      res = await fetch(`${API_BASE}/api/feeds`, { cache: 'no-store', signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (res.ok) {
       const cache = await res.json();
       if (cacheHasItems(cache)) { APP_STATE.cache = cache; return; }
     }
-  } catch { /* no backend here (e.g. static host): try the static cache next */ }
+  } catch { /* no backend / timed out: try the static cache next */ }
 
   // 2) static pre-fetched cache, only if recent enough
   try {
