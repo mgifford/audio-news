@@ -105,6 +105,7 @@ class RawArticle(BaseModel):
     url: str
     scope: str  # 'local', 'regional', 'national', 'international'
     source_name: str
+    beat: Optional[str] = None  # 'health', 'technology', 'business', 'government', ...
 
 
 class BulletinRequest(BaseModel):
@@ -270,7 +271,21 @@ _SCOPE_TRANSITIONS = {
     "national": "Across the country",
     "international": "Internationally",
 }
+# A story from a beat feed announces its beat instead of its geography, so the
+# specialization is audible ("In health news, from ...").
+_BEAT_TRANSITIONS = {
+    "health": "In health news",
+    "technology": "In technology",
+    "business": "In business and the economy",
+    "government": "In government and policy",
+    "environment": "On the environment",
+    "justice": "In justice and rights",
+}
 _SCOPE_WEIGHT = {"international": 3, "national": 3, "regional": 2, "local": 1}
+
+# BBC-style summary target: ~2 minutes at ~150 wpm ≈ 300 words. Soft cap so a large
+# deck doesn't run long; every story is still named in the headline block.
+TARGET_WORDS = 320
 
 
 def _sent(text: str) -> str:
@@ -292,44 +307,75 @@ def _story_order(stories: list[dict]) -> list[dict]:
     )
 
 
+def _transition(story: dict) -> str:
+    beat = story.get("beat")
+    if beat and beat in _BEAT_TRANSITIONS:
+        return _BEAT_TRANSITIONS[beat]
+    return _SCOPE_TRANSITIONS.get(story.get("scope"), "Next")
+
+
+def _story_body(s: dict) -> list[str]:
+    """The SJN arc for one story, as sentences (extractive only)."""
+    out = []
+    pillars = [s.get("response"), s.get("evidence"), s.get("limitation")]
+    if s.get("is_solutions_story") and any(pillars):
+        if s.get("response"):
+            out.append(f"The response: {_sent(s['response'])}")
+        if s.get("evidence"):
+            out.append(f"The evidence so far: {_sent(s['evidence'])}")
+        if s.get("limitation"):
+            out.append(f"The limitation: {_sent(s['limitation'])}")
+    elif s.get("is_crisis"):
+        out.append(_sent(s.get("root_cause") or s.get("summary") or ""))
+        if s.get("action_anchor"):
+            out.append(f"If you would like to help: {_sent(s['action_anchor'])} A resource link is in your player deck.")
+    elif s.get("summary"):
+        out.append(_sent(s["summary"]))
+    return [p for p in out if p]
+
+
 def assemble_script(stories: list[dict], anchor_name: str = "Alex") -> str:
     """Build the spoken bulletin from the feeds' own words — no model, so the spoken
-    text equals the extracted text (nothing invented). It leads with a top-stories
-    headline block, then tells each story in its SJN arc. URLs are never spoken."""
+    text equals the extracted text (nothing invented). BBC-summary shape: a top-stories
+    headline block, breaking/top first, each story in its SJN arc, a soft ~300-word cap,
+    and an 'And finally' solutions closer. URLs are never spoken."""
     if not stories:
         return ""
     ordered = _story_order(stories)
+
+    # Hold back one solutions story to close on ("And finally"), BBC-style, when the
+    # bulletin is long enough to warrant it and the closer isn't the lead.
+    closer = None
+    if len(ordered) >= 3:
+        for s in reversed(ordered):
+            if s.get("is_solutions_story") and s is not ordered[0]:
+                closer = s
+                break
+    body_stories = [s for s in ordered if s is not closer]
 
     parts = [f"This is your news bulletin, with {anchor_name}."]
     headlines = "; ".join(s["title"].rstrip(".") for s in ordered)
     parts.append(f"Our top stories: {headlines}.")
     parts.append("Now, the details.")
 
-    last_scope = None
-    for s in ordered:
-        if s.get("scope") != last_scope:
-            transition = _SCOPE_TRANSITIONS.get(s.get("scope"), "Next")
-            parts.append(f"{transition}, from {s['source']}: {_sent(s['title'])}")
-            last_scope = s.get("scope")
-        else:
-            parts.append(f"Also from {s['source']}: {_sent(s['title'])}")
+    words = sum(len(p.split()) for p in parts)
+    reserve = 45 if closer else 0  # leave room for the closer under the word target
+    last_key = None
+    for s in body_stories:
+        key = s.get("beat") or s.get("scope")
+        lead = f"{_transition(s)}, from {s['source']}: {_sent(s['title'])}" if key != last_key \
+            else f"Also from {s['source']}: {_sent(s['title'])}"
+        last_key = key
+        chunk = [lead, *_story_body(s)]
+        chunk_words = sum(len(p.split()) for p in chunk)
+        if words + chunk_words > TARGET_WORDS - reserve and words > 40:
+            break  # over the soft target; remaining stories stay in the headline block
+        parts.extend(chunk)
+        words += chunk_words
 
-        pillars = [s.get("response"), s.get("evidence"), s.get("limitation")]
-        if s.get("is_solutions_story") and any(pillars):
-            # Solutions arc — only the pillars actually present in the source.
-            if s.get("response"):
-                parts.append(f"The response: {_sent(s['response'])}")
-            if s.get("evidence"):
-                parts.append(f"The evidence so far: {_sent(s['evidence'])}")
-            if s.get("limitation"):
-                parts.append(f"The limitation: {_sent(s['limitation'])}")
-        elif s.get("is_crisis"):
-            # Crisis & mutual-aid arc — dignity, root cause, then an action anchor.
-            parts.append(_sent(s.get("root_cause") or s.get("summary") or ""))
-            if s.get("action_anchor"):
-                parts.append(f"If you would like to help: {_sent(s['action_anchor'])} A resource link is in your player deck.")
-        elif s.get("summary"):
-            parts.append(_sent(s["summary"]))
+    if closer:
+        parts.append(f"And finally, some better news, from {closer['source']}: {_sent(closer['title'])}")
+        parts.extend(_story_body(closer))
 
     parts.append("That is your briefing.")
     return " ".join(p.strip() for p in parts if p.strip())
@@ -375,6 +421,7 @@ def generate_bulletin(req: BulletinRequest):
             ev = evaluate_article(art)
             processed_stories.append({
                 "scope": art.scope,
+                "beat": art.beat,
                 "source": art.source_name,
                 "title": art.title,
                 "summary": ev.clean_summary,

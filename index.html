@@ -51,7 +51,16 @@
         <input type="range" id="sliderWorld" min="0" max="4" value="1">
       </div>
 
-      <button id="saveSettingsBtn" type="button" class="btn-primary">Save &amp; apply deck ratios</button>
+      <fieldset class="beat-group">
+        <legend>Add topic beats (optional)</legend>
+        <p class="subtitle">Each selected beat adds one specialized story to the deck.</p>
+        <label><input type="checkbox" class="beat-check" value="health"> Health &amp; care</label>
+        <label><input type="checkbox" class="beat-check" value="technology"> Technology</label>
+        <label><input type="checkbox" class="beat-check" value="business"> Business &amp; economy</label>
+        <label><input type="checkbox" class="beat-check" value="government"> Government &amp; policy</label>
+      </fieldset>
+
+      <button id="saveSettingsBtn" type="button" class="btn-primary">Save &amp; apply settings</button>
     </section>
 
     <!-- Controls & Player Deck -->

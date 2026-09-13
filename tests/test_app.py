@@ -114,6 +114,36 @@ def test_crisis_arc_and_breaking_first_ordering():
     assert "resource link is in your player deck" in script
 
 
+def test_beat_transition_is_audible():
+    stories = [{"scope": "national", "beat": "health", "source": "KFF",
+                "title": "Clinics cut waits", "summary": "s",
+                "is_solutions_story": False, "is_crisis": False}]
+    script = m.assemble_script(stories)
+    assert "In health news, from KFF:" in script
+
+
+def test_and_finally_closer_ends_on_a_solutions_story():
+    stories = [
+        {"scope": "international", "source": "TNH", "title": "Crisis one", "summary": "s", "is_crisis": True, "root_cause": "cause"},
+        {"scope": "national", "source": "N", "title": "Middle story", "summary": "s"},
+        {"scope": "local", "source": "L", "title": "Good news", "summary": "s",
+         "is_solutions_story": True, "response": "a fix"},
+    ]
+    script = m.assemble_script(stories)
+    assert "And finally, some better news, from L: Good news." in script
+    # the closer really is last
+    assert script.index("And finally") > script.index("Crisis one")
+
+
+def test_word_cap_keeps_bulletin_near_target():
+    stories = [{"scope": "national", "source": f"S{i}", "title": f"Story number {i} about things",
+                "summary": "This is a fairly long summary sentence that repeats content to add words. " * 4}
+               for i in range(20)]
+    script = m.assemble_script(stories)
+    # Soft cap ~320 words; allow headroom for the closer + framing.
+    assert len(script.split()) < 420
+
+
 def test_mcp_manifest_lists_tools():
     names = [t["name"] for t in client.get("/mcp/tools").json()["tools"]]
     assert names == ["evaluate_sojo_story", "generate_radio_bulletin"]

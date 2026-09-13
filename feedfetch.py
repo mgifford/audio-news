@@ -81,6 +81,7 @@ def build_cache(sources: dict, fetcher=None) -> dict:
             "name": feed["name"],
             "scope": geo,
             "type": feed.get("type"),
+            "beat": feed.get("beat"),
             "httpStatus": status,
             "fetchedAt": now,
             "itemCount": len(items),

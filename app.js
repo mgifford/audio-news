@@ -27,6 +27,7 @@ const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const APP_STATE = {
   theme: localStorage.getItem('sojo_theme') || 'dark',
   ratios: readJSON('sojo_ratios', { local: 1, regional: 1, national: 2, international: 1 }),
+  beats: readJSON('sojo_beats', []),
   history: readJSON('sojo_history', []),
   currentDeck: [],
   sources: null,
@@ -151,11 +152,20 @@ function bindUIEvents() {
     });
   });
 
-  // Save settings locally.
+  // Topic beats: restore checkboxes from state.
+  document.querySelectorAll('.beat-check').forEach(cb => {
+    cb.checked = APP_STATE.beats.includes(cb.value);
+  });
+
+  // Save settings locally (ratios + beats).
   document.getElementById('saveSettingsBtn').addEventListener('click', () => {
-    try { localStorage.setItem('sojo_ratios', JSON.stringify(APP_STATE.ratios)); } catch { /* ignore */ }
+    APP_STATE.beats = Array.from(document.querySelectorAll('.beat-check:checked')).map(cb => cb.value);
+    try {
+      localStorage.setItem('sojo_ratios', JSON.stringify(APP_STATE.ratios));
+      localStorage.setItem('sojo_beats', JSON.stringify(APP_STATE.beats));
+    } catch { /* ignore */ }
     closeDrawer();
-    updateStatus('Deck ratios saved locally.');
+    updateStatus('Settings saved locally.');
   });
 
   // Fetch a fresh deck.
@@ -266,11 +276,29 @@ async function generateNewsDeck() {
     freshItems.slice(0, targetCount).forEach(item => {
       deck.push({
         scope: geo,
+        beat: source.beat || null,
         sourceName: source.name,
         title: item.title,
         description: item.description,
         link: item.link
       });
+    });
+  }
+
+  // Topic beats: add one specialized story per selected beat.
+  for (const beat of APP_STATE.beats) {
+    const { source, items } = await pickBeatStories(beat);
+    if (!source) continue;
+    const fresh = items.filter(item => !APP_STATE.history.includes(item.link));
+    if (!fresh.length) continue;
+    const item = fresh[0];
+    deck.push({
+      scope: source.scope || 'national',
+      beat,
+      sourceName: source.name,
+      title: item.title,
+      description: item.description,
+      link: item.link
     });
   }
 
@@ -304,6 +332,27 @@ async function pickScopeStories(geo) {
   const available = APP_STATE.sources.geography[geo];
   if (!available || available.length === 0) return { source: null, items: [] };
   const source = available[Math.floor(Math.random() * available.length)];
+  return { source, items: await fetchRSSFeed(source) };
+}
+
+// Flatten every feed in the registry/cache into one list (each with its scope + beat).
+function allSources() {
+  const geo = (APP_STATE.cache && APP_STATE.cache.geography) || (APP_STATE.sources && APP_STATE.sources.geography) || {};
+  return Object.entries(geo).flatMap(([scope, feeds]) =>
+    feeds.map(f => ({ ...f, scope: f.scope || scope })));
+}
+
+// Pick a source for a topic beat (across all geographies) and return its stories.
+async function pickBeatStories(beat) {
+  const matches = allSources().filter(s => s.beat === beat);
+  if (!matches.length) return { source: null, items: [] };
+
+  const withItems = matches.filter(s => s.items && s.items.length);
+  if (withItems.length) {
+    const source = withItems[Math.floor(Math.random() * withItems.length)];
+    return { source, items: source.items };
+  }
+  const source = matches[Math.floor(Math.random() * matches.length)];
   return { source, items: await fetchRSSFeed(source) };
 }
 
@@ -370,7 +419,8 @@ function renderQueue(deck) {
 
     const tag = document.createElement('span');
     tag.className = 'scope-tag';
-    tag.textContent = `${story.scope.toUpperCase()} — ${story.sourceName}`;
+    const label = story.beat ? `${story.beat.toUpperCase()} · ${story.scope.toUpperCase()}` : story.scope.toUpperCase();
+    tag.textContent = `${label} — ${story.sourceName}`;
 
     const heading = document.createElement('h3');
     heading.textContent = story.title;
@@ -413,7 +463,8 @@ async function generateAIBroadcastScript(deckItems) {
       summary: item.description,
       url: item.link,
       scope: item.scope,
-      source_name: item.sourceName
+      source_name: item.sourceName,
+      beat: item.beat || null
     })),
     anchor_name: 'Alex',
     mode: generative ? 'generative' : 'deterministic'

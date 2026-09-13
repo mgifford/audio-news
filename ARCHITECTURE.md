@@ -47,11 +47,18 @@ The classifier also **extracts the SJN pillar phrases** present in each article
 (response, evidence, limitation, root cause, action anchor) — verbatim, empty when
 absent, never invented.
 
-- **Deterministic (default).** `assemble_script` opens with a top-stories headline
-  block (breaking/crisis and broader-scope items first), then tells each story in its
-  arc: a **solutions arc** (the response → the evidence → the limitation) or a
-  **crisis & mutual-aid arc** (root cause → an action anchor). It uses only the
-  extracted phrases, so spoken text equals source text and URLs are never spoken.
+- **Deterministic (default).** `assemble_script` follows a BBC-summary shape: a
+  top-stories headline block, breaking/crisis and broader-scope items first, a soft
+  ~320-word (~2-minute) cap, and an **"And finally"** solutions closer. Each story is
+  told in its arc — a **solutions arc** (response → evidence → limitation) or a
+  **crisis & mutual-aid arc** (root cause → action anchor) — using only the extracted
+  phrases, so spoken text equals source text and URLs are never spoken. A story from a
+  beat feed announces its beat ("In health news, …") instead of its geography.
+
+**Topic beats.** `sources.json` tags each feed with a `beat` (health, technology,
+business, government, environment, justice, general). The reader offers a beat picker
+alongside the geographic mix; each selected beat adds one specialized story, sourced
+only from feeds curated for that beat (deterministic — no model classifies beats).
 - **Generative (opt-in, labelled).** A local model rephrases into broadcast prose,
   guided by a style exemplar and the same SJN arc, using only the extracted fields.
   It is grounding-checked and shown as "AI-rephrased"; the "no invented facts"
