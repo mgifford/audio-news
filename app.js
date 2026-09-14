@@ -345,7 +345,9 @@ async function generateNewsDeck() {
         sourceName: source.name,
         title: item.title,
         description: item.description,
-        link: item.link
+        link: item.link,
+        published: item.published || null,
+        fetchedAt: item.fetchedAt || source.fetchedAt || null
       });
     });
   }
@@ -363,7 +365,9 @@ async function generateNewsDeck() {
       sourceName: source.name,
       title: item.title,
       description: item.description,
-      link: item.link
+      link: item.link,
+      published: item.published || null,
+      fetchedAt: item.fetchedAt || source.fetchedAt || null
     });
   }
 
@@ -462,6 +466,15 @@ function extractLink(item) {
   return textLink ? textLink.textContent.trim() : '';
 }
 
+// The item's own publish date (RSS pubDate / dc:date / Atom published|updated),
+// normalised to an ISO string. Empty when the feed omits a parseable date.
+function extractPublished(item) {
+  const raw = item.querySelector('pubDate, published, updated, date')?.textContent?.trim();
+  if (!raw) return null;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
 async function fetchRSSFeed(source) {
   try {
     const targetUrl = encodeURIComponent(source.url);
@@ -473,6 +486,7 @@ async function fetchRSSFeed(source) {
     if (xml.querySelector('parsererror')) throw new Error('Malformed XML');
 
     const items = Array.from(xml.querySelectorAll('item, entry'));
+    const fetchedAt = new Date().toISOString(); // the live proxy fetches now
 
     return items.map(item => {
       const title = (item.querySelector('title')?.textContent || 'Untitled').trim();
@@ -480,7 +494,7 @@ async function fetchRSSFeed(source) {
       // Prefer the fullest text a feed offers (content:encoded) over a one-line summary.
       const raw = item.querySelector('encoded')?.textContent
         || item.querySelector('description, summary, content')?.textContent || '';
-      return { title, link, description: tidyText(cleanText(raw)) };
+      return { title, link, description: tidyText(cleanText(raw)), published: extractPublished(item), fetchedAt };
     }).filter(item => item.link); // drop items with no verifiable source link
   } catch (err) {
     console.warn(`Failed to fetch feed: ${source.name}`, err);
@@ -514,6 +528,48 @@ function tidyText(text, max = MAX_DESC) {
   return `${(cut > 80 ? window.slice(0, cut) : window).trim().replace(/[.,;:]$/, '')}.`;
 }
 
+// A short, human "time ago" for the given ISO timestamp (e.g. "3h ago", "just now").
+// Returns '' for a missing or unparseable date so callers can omit the line.
+function relativeTime(iso) {
+  if (!iso) return '';
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return '';
+  const secs = Math.round((Date.now() - then) / 1000);
+  if (secs < 0) return 'just now';
+  if (secs < 60) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  return months < 12 ? `${months}mo ago` : `${Math.round(months / 12)}y ago`;
+}
+
+// A visible freshness line for a card: when the story was published (how recent the
+// news is), falling back to when it was downloaded. The exact timestamps ride in the
+// title attribute for anyone who wants them, without being spoken.
+function recencyLine(story) {
+  const pub = relativeTime(story.published);
+  const got = relativeTime(story.fetchedAt);
+  const el = document.createElement('p');
+  el.className = 'recency';
+  if (pub) {
+    el.textContent = `🕒 Published ${pub}`;
+    const bits = [story.published && `Published ${new Date(story.published).toLocaleString()}`,
+                  story.fetchedAt && `downloaded ${got}`].filter(Boolean);
+    if (bits.length) el.title = bits.join(' · ');
+    return el;
+  }
+  if (got) {
+    el.textContent = `🕒 Downloaded ${got}`;
+    if (story.fetchedAt) el.title = `Downloaded ${new Date(story.fetchedAt).toLocaleString()}`;
+    return el;
+  }
+  return null;
+}
+
 function renderQueue(deck) {
   const container = document.getElementById('newsQueue');
   container.textContent = ''; // clear safely
@@ -543,7 +599,10 @@ function renderQueue(deck) {
 
     const link = sourceLink(story.link, `Verify source at ${story.sourceName}`);
 
-    card.append(tag, heading, summary, link);
+    card.append(tag, heading, summary);
+    const recency = recencyLine(story);
+    if (recency) card.appendChild(recency);
+    card.appendChild(link);
     const edge = edgeReaderLink(story.link);
     if (edge) card.appendChild(edge);
     container.appendChild(card);
@@ -640,6 +699,40 @@ function playScriptWithTTS(scriptText, storyMetadata, warnings, mode) {
   speak(spoken, 'Reading the broadcast script…');
 }
 
+// A short two-note chime via the Web Audio API. It gives the audible "news is starting"
+// cue the user asked for, and — because it does not depend on installed TTS voices — it
+// also confirms the browser's audio output is working even if the spoken voice is silent.
+let _audioCtx = null;
+function playCue() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    _audioCtx = _audioCtx || new Ctx();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+    const now = _audioCtx.currentTime;
+    [ [660, 0], [880, 0.14] ].forEach(([freq, offset]) => {
+      const osc = _audioCtx.createOscillator();
+      const gain = _audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      // Quick fade in/out so it reads as a soft chime, not a click.
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.15, now + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.13);
+      osc.connect(gain).connect(_audioCtx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.14);
+    });
+  } catch { /* audio cue is a nicety; never block playback on it */ }
+}
+
+// Toggle the visible "Playing…" indicator so it is obvious that a bulletin is running
+// even when the TTS voice is quiet or missing.
+function setPlaying(on) {
+  const el = document.getElementById('playingIndicator');
+  if (el) el.hidden = !on;
+}
+
 // Shared speech path for both readers: consistent state, lang, and stop handling.
 function speak(text, statusMsg) {
   if (!('speechSynthesis' in window)) {
@@ -655,13 +748,32 @@ function speak(text, statusMsg) {
   utterance.lang = (chosen && chosen.lang) || activeLang();
   utterance.rate = parseFloat(document.getElementById('speedRate').value) || 1.0;
   utterance.pitch = 1.0;
-  utterance.onend = onReadingStopped;
-  utterance.onerror = onReadingStopped;
+
+  // onstart may never fire if no voice can speak; the cue and the visible indicator
+  // still tell the user something is happening, and the transcript is always shown.
+  utterance.onstart = () => { setPlaying(true); updateStatus(statusMsg); };
+  utterance.onend = () => { setPlaying(false); onReadingStopped(); };
+  utterance.onerror = (e) => {
+    setPlaying(false);
+    onReadingStopped();
+    // "interrupted"/"canceled" are the normal result of pressing Stop — not errors.
+    if (e && e.error && !['interrupted', 'canceled'].includes(e.error)) {
+      updateStatus(`Speech could not play (${e.error}). The transcript above remains available to read.`, true);
+    }
+  };
 
   document.getElementById('playAudioBtn').disabled = true;
   document.getElementById('generateBroadcastBtn').disabled = true;
   document.getElementById('stopAudioBtn').disabled = false;
-  updateStatus(statusMsg);
+
+  playCue();          // audible "here comes the news" cue + proof audio output works
+  setPlaying(true);   // show the indicator immediately, before onstart
+
+  if (!voices.length) {
+    updateStatus('No text-to-speech voices are installed in this browser, so the bulletin may be silent — you just heard the audio cue, and the full transcript is shown above to read.', true);
+  } else {
+    updateStatus(statusMsg);
+  }
   window.speechSynthesis.speak(utterance);
 }
 
@@ -758,6 +870,7 @@ function stopReading() {
 }
 
 function onReadingStopped() {
+  setPlaying(false);
   const idle = APP_STATE.currentDeck.length === 0;
   document.getElementById('stopAudioBtn').disabled = true;
   document.getElementById('playAudioBtn').disabled = idle;

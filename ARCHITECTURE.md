@@ -18,8 +18,10 @@ misdescriptions.
        (index.html, styles.css, app.js, sources.json) — NOT a /static dir
       ▼
 [ Browser ]
-   reader UI + theme, localStorage prefs/history, Web Speech API playback,
-   visible transcript, Edge `read:` links (Edge only)
+   reader UI + theme, localStorage prefs/history, Web Speech API playback
+   (with a Web Audio start chime + a visible "Playing…" indicator, so playback
+   is obvious even when no TTS voice is installed), per-story freshness ("Published
+   3h ago"), visible transcript, Edge `read:` links (Edge only)
 
 [ Scheduled: .github/workflows/prefetch-feeds.yml ]
    every 6h fetch feeds server-side -> commit feeds-cache.json ([skip ci])

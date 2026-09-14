@@ -181,6 +181,46 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 .status-indicator.is-error { color: var(--error); font-weight: 700; }
 
+/* Visible "a bulletin is playing" indicator: an animated equaliser plus a label, so
+   playback is obvious even when the TTS voice is quiet or unavailable. */
+.playing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+[data-theme="high-contrast"] .playing-indicator { color: var(--text-main); }
+.playing-indicator .eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 1.1rem;
+}
+.playing-indicator .eq span {
+  width: 4px;
+  height: 100%;
+  background: currentColor;
+  border-radius: 2px;
+  transform-origin: bottom;
+  animation: eq-bounce 0.9s ease-in-out infinite;
+}
+.playing-indicator .eq span:nth-child(2) { animation-delay: 0.15s; }
+.playing-indicator .eq span:nth-child(3) { animation-delay: 0.3s; }
+.playing-indicator .eq span:nth-child(4) { animation-delay: 0.45s; }
+@keyframes eq-bounce {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+/* Per-card freshness line: how recent the story is. */
+.recency {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0.5rem 0 0;
+}
+
 .proxy-note {
   margin: 0.75rem 0 0;
   font-size: 0.8rem;
@@ -242,4 +282,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
+  /* Hold the equaliser bars steady rather than animating for reduced-motion users;
+     the label and colour still show that a bulletin is playing. */
+  .playing-indicator .eq span { animation: none; transform: scaleY(0.6); }
 }

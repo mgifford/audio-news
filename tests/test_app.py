@@ -23,6 +23,18 @@ def test_feedfetch_parse_is_extractive_and_drops_linkless():
     assert "<" not in items[0]["description"] and "200 homes" in items[0]["description"]
 
 
+def test_feedfetch_parse_extracts_published_date():
+    rss = (b"""<?xml version="1.0"?><rss version="2.0"><channel>"""
+           b"""<item><title>Dated</title><description>x</description>"""
+           b"""<link>https://example.org/d</link>"""
+           b"""<pubDate>Mon, 01 Jun 2026 12:00:00 GMT</pubDate></item>"""
+           b"""</channel></rss>""")
+    items = feedfetch.parse_feed(rss)
+    assert items[0]["published"].startswith("2026-06-01T12:00:00")
+    # No date in the feed -> published is None, not a fabricated timestamp.
+    assert feedfetch.parse_feed(_RSS)[0]["published"] is None
+
+
 def test_feedfetch_strips_boilerplate_and_bylines():
     assert feedfetch.clean("Real news. The post Foo appeared first on ProPublica.") == "Real news."
     assert feedfetch.clean("A headline sofia Wed, 07/01/2026 - 15:50") == "A headline"

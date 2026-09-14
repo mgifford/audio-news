@@ -69,8 +69,23 @@ def _best_text(entry) -> str:
     return max(candidates, key=lambda v: len(_TAG_RE.sub(" ", v)), default="")
 
 
+def _published_iso(entry) -> str | None:
+    """The entry's own publish (or update) time as an ISO-8601 UTC string, so the
+    reader can show how recent each story is. None when the feed omits a date."""
+    import calendar
+    for key in ("published_parsed", "updated_parsed"):
+        st = entry.get(key)
+        if st:
+            try:
+                dt = datetime.datetime.fromtimestamp(calendar.timegm(st), datetime.timezone.utc)
+                return dt.isoformat(timespec="seconds")
+            except (ValueError, OverflowError, TypeError):
+                continue
+    return None
+
+
 def parse_feed(raw) -> list[dict]:
-    """Parse feed bytes/str into a bounded list of {title, description, link}."""
+    """Parse feed bytes/str into a bounded list of {title, description, link, published}."""
     import feedparser  # lazy: keeps `import feedfetch` free of the dependency
     parsed = feedparser.parse(raw)
     items = []
@@ -82,6 +97,7 @@ def parse_feed(raw) -> list[dict]:
             "title": (entry.get("title") or "Untitled").strip(),
             "description": tidy(clean(_best_text(entry))),
             "link": link,
+            "published": _published_iso(entry),
         })
     return items
 
